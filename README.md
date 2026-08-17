@@ -1,97 +1,32 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# About the Project
 
-# Getting Started
+Chess Results Notifier is a simple mobile app for Android that notifies users about the matchmaking of a chess
+tournament. This is intended for chess players that want to keep track of the game.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Functionalities
 
-## Step 1: Start Metro
+The user can register a chess-results link for the tournament he wants to keep track of. He can choose two types of
+notifications:
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- Round pairing
+- Round pairing with player tracking
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Chess Results Scraping
 
-```sh
-# Using npm
-npm start
+**Base URL**: ```https://sx.chess-results.com/tournament_id```
 
-# OR using Yarn
-yarn start
-```
+For the scraping, we need to specify the server (e.g. ```https://s1...```, ```https://s2...``` or ```https://s3...```)
+The tournament ID follows a rule. It starts with ```tnr``` and ends with ```.aspx```
 
-## Step 2: Build and run your app
+With the **Base URL** we can get the tournament details with a simple scraping. Here are the query params that we're
+gonna use.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+```lan```: It's the query parameter for the language of the page. This is helpful for getting details right.
 
-### Android
+```art```: I don't know what this actually means. But with this you can control the pairing round category
 
-```sh
-# Using npm
-npm run android
+```rd```: This the round number
 
-# OR using Yarn
-yarn android
-```
+## Architecture
 
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+For this project it makes sense to go with Event Sourcing since history and auditing could be crucial.
