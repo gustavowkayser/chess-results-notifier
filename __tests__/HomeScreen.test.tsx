@@ -1,23 +1,16 @@
-/**
- * @format
- */
-
 import React from 'react';
-import { Switch, TextInput } from 'react-native';
+import { DeviceEventEmitter } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
-import App from '../App';
+import { HomeScreen } from '../src/ui/screens/HomeScreen.tsx';
 
-const mockRegisterTournament = jest.fn();
 const mockUnregisterTournament = jest.fn();
 const mockListTournaments = jest.fn();
 
 jest.mock('../src/api', () => ({
     tournamentService: {
-        registerTournament: (url: string) => mockRegisterTournament(url),
         unregisterTournament: (url: string) => mockUnregisterTournament(url),
         listTournaments: () => mockListTournaments(),
     },
-    monitoringService: {},
 }));
 
 const mockStart = jest.fn();
@@ -32,9 +25,6 @@ jest.mock('../src/monitoring/MonitoringController', () => ({
     },
 }));
 
-// SafeAreaProvider withholds its children until it has measured insets, which
-// never happens under the test renderer — without this the app body does not
-// render at all. The library ships this mock for the purpose.
 jest.mock('react-native-safe-area-context', () =>
     require('react-native-safe-area-context/jest/mock').default,
 );
@@ -45,18 +35,41 @@ const aggregate = (
     name: string,
     currentRound: number,
     totalRounds: number,
+    updatedAt: Date | null = new Date(),
 ) => ({
     id,
     getDetails: () => ({ name, currentRound, totalRounds }),
+    getUpdatedAt: () => updatedAt,
+});
+
+beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+    mockListTournaments.mockResolvedValue([]);
+    mockIsMonitoring.mockResolvedValue(false);
+    mockStart.mockResolvedValue(true);
+});
+
+afterEach(() => {
+    DeviceEventEmitter.removeAllListeners();
+    jest.useRealTimers();
 });
 
 const render = async () => {
+    const navigate = jest.fn();
+    const focusListeners: Array<() => void> = [];
+    const addListener = jest.fn((_event: string, listener: () => void) => {
+        focusListeners.push(listener);
+
+        return () => {};
+    });
+
     let tree!: ReactTestRenderer.ReactTestRenderer;
 
-    // Async so the mount effects — isMonitoring and the first listTournaments —
-    // settle before any assertion runs.
     await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<App />);
+        tree = ReactTestRenderer.create(
+            <HomeScreen navigation={{ navigate, addListener } as never} />,
+        );
     });
 
     const act = async (work: () => unknown) =>
@@ -65,18 +78,27 @@ const render = async () => {
         });
 
     return {
-        tree,
-        type: (text: string) =>
-            act(() => tree.root.findByType(TextInput as never).props.onChangeText(text)),
-        add: () =>
-            act(() => tree.root.findByProps({ testID: 'add-tournament' }).props.onPress()),
+        navigate,
+        openSearch: () =>
+            act(() =>
+                tree.root.findByProps({ testID: 'open-search' }).props.onPress(),
+            ),
+        focus: () => act(() => focusListeners.forEach(listener => listener())),
         toggle: (next: boolean) =>
-            act(() => tree.root.findByType(Switch as never).props.onValueChange(next)),
+            act(() =>
+                tree.root
+                    .findByProps({ accessibilityRole: 'switch' })
+                    .props.onPress(next),
+            ),
+        switchIsOn: () =>
+            tree.root.findByProps({ accessibilityRole: 'switch' }).props
+                .accessibilityState.checked,
         remove: (id: string) =>
             act(() =>
-                tree.root.findByProps({ testID: `unregister-${id}` }).props.onPress(),
+                tree.root
+                    .findByProps({ testID: `unregister-${id}` })
+                    .props.onPress(),
             ),
-        switchIsOn: () => tree.root.findByType(Switch as never).props.value,
         text: () =>
             tree.root
                 .findAll(node => typeof node.props.children === 'string')
@@ -84,13 +106,6 @@ const render = async () => {
                 .join('\n'),
     };
 };
-
-beforeEach(() => {
-    jest.clearAllMocks();
-    mockListTournaments.mockResolvedValue([]);
-    mockIsMonitoring.mockResolvedValue(false);
-    mockStart.mockResolvedValue(true);
-});
 
 describe('tournament list', () => {
     test('shows an empty state when nothing is tracked', async () => {
@@ -101,7 +116,12 @@ describe('tournament list', () => {
 
     test('renders a card per tournament with its round', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate('https://s1.chess-results.com/tnr1.aspx', 'Goiano Blitz', 5, 7),
+            aggregate(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+            ),
         ]);
 
         const { text } = await render();
@@ -110,9 +130,49 @@ describe('tournament list', () => {
         expect(text()).toContain('Round 5 of 7');
     });
 
+    test('shows how long ago the tournament last changed', async () => {
+        mockListTournaments.mockResolvedValue([
+            aggregate(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+                new Date(Date.now() - 2 * 60 * 60 * 1000),
+            ),
+        ]);
+
+        const { text } = await render();
+
+        expect(text()).toContain('2h ago');
+    });
+
+    // A stream with no events cannot claim a time, and a "·" dangling off the
+    // round reads as a rendering bug.
+    test('omits the timestamp when the aggregate has none', async () => {
+        mockListTournaments.mockResolvedValue([
+            aggregate(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+                null,
+            ),
+        ]);
+
+        const { text } = await render();
+
+        expect(text()).toContain('Round 5 of 7');
+        expect(text()).not.toContain('Round 5 of 7 ·');
+    });
+
     test('reads round zero as no pairings rather than "0 of 7"', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate('https://s1.chess-results.com/tnr1.aspx', 'Not started', 0, 7),
+            aggregate(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Not started',
+                0,
+                7,
+            ),
         ]);
 
         const { text } = await render();
@@ -136,7 +196,9 @@ describe('tournament list', () => {
 
     test('unregisters and refreshes', async () => {
         const id = 'https://s1.chess-results.com/tnr1.aspx';
-        mockListTournaments.mockResolvedValue([aggregate(id, 'Goiano Blitz', 5, 7)]);
+        mockListTournaments.mockResolvedValue([
+            aggregate(id, 'Goiano Blitz', 5, 7),
+        ]);
 
         const { remove } = await render();
 
@@ -146,42 +208,35 @@ describe('tournament list', () => {
         expect(mockUnregisterTournament).toHaveBeenCalledWith(id);
         expect(mockListTournaments).toHaveBeenCalledTimes(2);
     });
-});
 
-describe('registering', () => {
-    test('registers the trimmed URL and refreshes', async () => {
-        mockRegisterTournament.mockResolvedValue(undefined);
+    // Registration happens on the other screen, so returning to this one is
+    // the only moment a newly added tournament can appear.
+    test('refreshes when the screen regains focus', async () => {
+        const { focus } = await render();
 
-        const { type, add } = await render();
+        await focus();
 
-        await type('  https://s1.chess-results.com/tnr1475106.aspx  ');
-        await add();
-
-        expect(mockRegisterTournament).toHaveBeenCalledWith(
-            'https://s1.chess-results.com/tnr1475106.aspx',
-        );
         expect(mockListTournaments).toHaveBeenCalledTimes(2);
     });
 
-    test('shows a rejected URL instead of crashing', async () => {
-        mockRegisterTournament.mockRejectedValue(
-            new Error('Not a chess-results tournament URL: "nonsense"'),
-        );
+    test('refreshes when a monitoring tick fires', async () => {
+        await render();
 
-        const { type, add, text } = await render();
+        await ReactTestRenderer.act(async () => {
+            DeviceEventEmitter.emit('onMonitoringTick');
+        });
 
-        await type('nonsense');
-        await add();
-
-        expect(text()).toContain('Not a chess-results tournament URL');
+        expect(mockListTournaments).toHaveBeenCalledTimes(2);
     });
+});
 
-    test('does not register a blank URL', async () => {
-        const { add } = await render();
+describe('search bar', () => {
+    test('opens the search screen when tapped', async () => {
+        const { openSearch, navigate } = await render();
 
-        await add();
+        await openSearch();
 
-        expect(mockRegisterTournament).not.toHaveBeenCalled();
+        expect(navigate).toHaveBeenCalledWith('Search');
     });
 });
 

@@ -1,5 +1,6 @@
 import { AndroidNotifier } from './infrastructure/AndroidNotifier.ts';
 import { ChessResultsProvider } from './infrastructure/ChessResultsProvider.ts';
+import { ChessResultsUrl } from './infrastructure/chessresults/ChessResultsUrl.ts';
 import { MonitoringService } from './application/services/MonitoringService.ts';
 import { OpSqliteDatabase } from './infrastructure/sqlite/OpSqliteDatabase.ts';
 import { SqliteEventRepository } from './infrastructure/SqliteEventRepository.ts';
@@ -20,4 +21,11 @@ const monitoringService = new MonitoringService(
     notifier,
 );
 
-export { tournamentService, monitoringService };
+/**
+ * Whether text names a chess-results tournament. Exported so the search screen
+ * can tell a URL from a player name without a second copy of the pattern.
+ */
+const isTournamentUrl = (text: string): boolean =>
+    ChessResultsUrl.isTournamentUrl(text);
+
+export { tournamentService, monitoringService, isTournamentUrl };

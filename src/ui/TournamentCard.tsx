@@ -1,4 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Trash2 } from 'lucide-react-native';
+import { formatRelativeTime } from './relativeTime.ts';
 import { theme } from './theme.ts';
 
 export interface TournamentCardModel {
@@ -6,6 +8,7 @@ export interface TournamentCardModel {
     name: string;
     currentRound: number;
     totalRounds: number;
+    updatedAt: Date | null;
 }
 
 const roundLabel = ({ currentRound, totalRounds }: TournamentCardModel) => {
@@ -25,6 +28,21 @@ const roundLabel = ({ currentRound, totalRounds }: TournamentCardModel) => {
     return `Round ${currentRound} of ${totalRounds}`;
 };
 
+/**
+ * The round and when it went up. The timestamp is the aggregate's last change,
+ * so it sits next to the round it describes rather than reading as a freshness
+ * check on the app.
+ */
+const metaLabel = (tournament: TournamentCardModel) => {
+    const round = roundLabel(tournament);
+
+    if (tournament.updatedAt === null) {
+        return round;
+    }
+
+    return `${round} · ${formatRelativeTime(tournament.updatedAt)}`;
+};
+
 export function TournamentCard({
     tournament,
     onUnregister,
@@ -38,15 +56,18 @@ export function TournamentCard({
                 <Text style={styles.name} numberOfLines={2}>
                     {tournament.name}
                 </Text>
-                <Text style={styles.round}>{roundLabel(tournament)}</Text>
+                <Text style={styles.meta}>{metaLabel(tournament)}</Text>
             </View>
 
             <Pressable
                 style={styles.remove}
                 onPress={() => onUnregister(tournament.id)}
                 testID={`unregister-${tournament.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Stop tracking ${tournament.name}`}
+                hitSlop={8}
             >
-                <Text style={styles.removeLabel}>Remove</Text>
+                <Trash2 size={18} color={theme.danger} />
             </Pressable>
         </View>
     );
@@ -63,6 +84,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 14,
         marginBottom: 10,
+        height: 96,
     },
     details: {
         flex: 1,
@@ -72,21 +94,18 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
     },
-    round: {
+    meta: {
         color: theme.muted,
         fontSize: 13,
         marginTop: 4,
     },
+    // A bare 18px icon is an unmissable tap target on paper and a frustrating
+    // one in the hand, so the pressable is padded out to 40.
     remove: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: theme.danger,
-    },
-    removeLabel: {
-        color: theme.danger,
-        fontSize: 13,
-        fontWeight: '600',
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 10,
     },
 });

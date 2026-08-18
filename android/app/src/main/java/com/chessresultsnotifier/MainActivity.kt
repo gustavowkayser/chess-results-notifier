@@ -1,11 +1,21 @@
 package com.chessresultsnotifier
 
+import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
+
+    /**
+     * Passing null discards Android's saved fragment state. react-native-screens
+     * requires this: restored fragments would otherwise be reattached to a React
+     * tree that no longer exists, and the app crashes on recreation.
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(null)
+    }
 
     /**
      * Returns the name of the main component registered from JavaScript. This is used to schedule
