@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
             android:name=".MainApplication"
@@ -30,5 +31,9 @@
                 android:name=".monitoring.MonitoringService"
                 android:exported="false"
                 android:foregroundServiceType="dataSync"/>
+
+        <service
+                android:name=".monitoring.MonitoringTaskService"
+                android:exported="false"/>
     </application>
 </manifest>

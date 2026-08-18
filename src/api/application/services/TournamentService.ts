@@ -1,17 +1,37 @@
 import { TournamentDetails } from '../../domain/TournamentDetails.ts';
 import { TournamentProvider } from '../providers/TournamentProvider.ts';
-import { TournamentDetailsMapper } from '../../infrastructure/mappers/TournamentDetailsMapper.ts';
+import { EventRepository } from '../repositories/EventRepository.ts';
+import { Tournament } from '../../domain/Tournament.ts';
 
 export class TournamentService {
-    constructor(private readonly tournamentProvider: TournamentProvider) {}
+    constructor(
+        private readonly tournamentProvider: TournamentProvider,
+        private readonly eventRepository: EventRepository,
+    ) {}
 
-    async getTournamentDetails(
+    async registerTournament(
         tournamentUrl: string,
     ): Promise<TournamentDetails> {
-        const details = await this.tournamentProvider.getTournamentDetails(
+        const tournamentDetails =
+            await this.tournamentProvider.getTournamentDetails(tournamentUrl);
+
+        const tournament = Tournament.register(
             tournamentUrl,
+            tournamentDetails.toDomain(),
         );
 
-        return TournamentDetailsMapper.toDomain(details);
+        await this.eventRepository.save(tournament);
+
+        return tournament.getDetails();
+    }
+
+    async listTournaments(): Promise<Tournament[]> {
+        const ids = await this.eventRepository.listAggregateIds();
+
+        return await Promise.all(
+            ids.map(async id =>
+                Tournament.rehydrate(id, await this.eventRepository.load(id)),
+            ),
+        );
     }
 }
