@@ -60,6 +60,7 @@ function AppContent() {
                     name: details.name,
                     currentRound: details.currentRound,
                     totalRounds: details.totalRounds,
+                    updatedAt: tournament.getUpdatedAt(),
                 };
             }),
         );

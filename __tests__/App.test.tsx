@@ -45,9 +45,11 @@ const aggregate = (
     name: string,
     currentRound: number,
     totalRounds: number,
+    updatedAt: Date | null = new Date(),
 ) => ({
     id,
     getDetails: () => ({ name, currentRound, totalRounds }),
+    getUpdatedAt: () => updatedAt,
 });
 
 const render = async () => {
@@ -97,6 +99,43 @@ describe('tournament list', () => {
         const { text } = await render();
 
         expect(text()).toContain('No tournaments yet');
+    });
+
+    test('shows how long ago the tournament last changed', async () => {
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+        mockListTournaments.mockResolvedValue([
+            aggregate(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+                twoHoursAgo,
+            ),
+        ]);
+
+        const { text } = await render();
+
+        expect(text()).toContain('2h ago');
+    });
+
+    // A stream with no events cannot claim a time, and "· " dangling off the
+    // round reads as a rendering bug.
+    test('omits the timestamp when the aggregate has none', async () => {
+        mockListTournaments.mockResolvedValue([
+            aggregate(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+                null,
+            ),
+        ]);
+
+        const { text } = await render();
+
+        expect(text()).toContain('Round 5 of 7');
+        expect(text()).not.toContain('·');
     });
 
     test('renders a card per tournament with its round', async () => {
