@@ -1,3 +1,4 @@
+/* eslint-env jest */
 /**
  * Lucide icons render through react-native-svg's native views, which do not
  * exist under the test renderer. They carry no behaviour worth exercising, so
