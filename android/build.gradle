@@ -19,3 +19,6 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// The CMake version pin for native modules lives in settings.gradle, which is
+// the only hook early enough — see the comment there.

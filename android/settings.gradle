@@ -4,3 +4,20 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autoli
 rootProject.name = 'ChessResultsNotifier'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
+
+// The pin in app/build.gradle only covers :app, but autolinked native modules
+// hit the same Windows path limit. op-sqlite builds under node_modules, where
+// the object directory alone eats 189 of CMake's 250-character budget before
+// the mirrored source path is appended; ninja 1.10.2 (bundled with CMake
+// 3.22.1, the AGP default) then fails with "manifest 'build.ninja' still dirty
+// after 100 tries". CMake 3.31.6 ships ninja 1.12.1, which honours
+// LongPathsEnabled.
+//
+// This has to run from settings.gradle: by the time the root build.gradle is
+// evaluated, autolinking has already configured the native modules and AGP
+// rejects the change with "It is too late to set version".
+gradle.beforeProject { project ->
+    project.plugins.withId('com.android.library') {
+        project.android.externalNativeBuild.cmake.version = '3.31.6'
+    }
+}

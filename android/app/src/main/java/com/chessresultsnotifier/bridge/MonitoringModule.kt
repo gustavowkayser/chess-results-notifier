@@ -112,7 +112,7 @@ class MonitoringModule(
             val application = context.applicationContext as? ReactApplication
                 ?: return
 
-            application.reactHost.currentReactContext
+            application.reactHost?.currentReactContext
                 ?.emitDeviceEvent(eventName, params)
         }
     }
