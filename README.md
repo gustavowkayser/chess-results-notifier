@@ -1,6 +1,6 @@
 # About the Project
 
-Chess Results Notifier is a simple mobile app for Android that notifies users about the matchmaking of a chess
+Chess Notify is a simple mobile app for Android that notifies users about the matchmaking of a chess
 tournament. This is intended for chess players that want to keep track of the game.
 
 ## Functionalities
