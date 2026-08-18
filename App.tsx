@@ -13,6 +13,7 @@ import {
     StatusBar,
     StyleSheet,
     Text,
+    TextInput,
     View,
     useColorScheme,
 } from 'react-native';
@@ -23,7 +24,7 @@ import {
 import { MonitoringController } from './src/monitoring/MonitoringController';
 import { tournamentService } from './src/api';
 
-const SAMPLE_URL = 'https://s1.chess-results.com/tnr1234567.aspx?lan=1';
+const URL_PLACEHOLDER = 'https://s1.chess-results.com/tnr1477210.aspx';
 const TICK_INTERVAL_SECONDS = 10;
 
 function App() {
@@ -43,6 +44,8 @@ function AppContent() {
     const safeAreaInsets = useSafeAreaInsets();
     const [log, setLog] = useState<string[]>([]);
     const [monitoring, setMonitoring] = useState(false);
+    const [url, setUrl] = useState('');
+    const [registering, setRegistering] = useState(false);
 
     const append = (line: string) =>
         setLog(previous => [
@@ -62,8 +65,31 @@ function AppContent() {
     }, []);
 
     const register = async () => {
-        const details = await tournamentService.registerTournament(SAMPLE_URL);
-        append(`registered "${details.name}" at round ${details.currentRound}`);
+        const tournamentUrl = url.trim();
+
+        if (tournamentUrl.length === 0 || registering) {
+            return;
+        }
+
+        // Registering now scrapes chess-results, so it is slow enough to need a
+        // pending state and can fail on either a malformed URL or the network.
+        setRegistering(true);
+
+        try {
+            const details = await tournamentService.registerTournament(
+                tournamentUrl,
+            );
+
+            append(
+                `registered "${details.name}" at round ` +
+                    `${details.currentRound} of ${details.totalRounds}`,
+            );
+            setUrl('');
+        } catch (error) {
+            append(`could not register: ${(error as Error).message}`);
+        } finally {
+            setRegistering(false);
+        }
     };
 
     const start = async () => {
@@ -85,8 +111,26 @@ function AppContent() {
                 {monitoring ? 'running' : 'stopped'}
             </Text>
 
+            <TextInput
+                style={styles.input}
+                value={url}
+                onChangeText={setUrl}
+                placeholder={URL_PLACEHOLDER}
+                placeholderTextColor="#9aa0a6"
+                autoCapitalize="none"
+                autoCorrect={false}
+                inputMode="url"
+                editable={!registering}
+                returnKeyType="go"
+                onSubmitEditing={register}
+            />
+
             <View style={styles.buttons}>
-                <Button label="Register sample" onPress={register} />
+                <Button
+                    label={registering ? 'Registering…' : 'Register'}
+                    onPress={register}
+                    disabled={registering || url.trim().length === 0}
+                />
                 <Button label="Start" onPress={start} />
                 <Button label="Stop" onPress={stop} />
             </View>
@@ -105,12 +149,18 @@ function AppContent() {
 function Button({
     label,
     onPress,
+    disabled = false,
 }: {
     label: string;
     onPress: () => void | Promise<void>;
+    disabled?: boolean;
 }) {
     return (
-        <Pressable style={styles.button} onPress={onPress}>
+        <Pressable
+            style={[styles.button, disabled && styles.buttonDisabled]}
+            onPress={onPress}
+            disabled={disabled}
+        >
             <Text style={styles.buttonLabel}>{label}</Text>
         </Pressable>
     );
@@ -129,6 +179,19 @@ const styles = StyleSheet.create({
         marginTop: 4,
         opacity: 0.6,
     },
+    input: {
+        marginTop: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderWidth: 1,
+        borderColor: '#c4c7c5',
+        borderRadius: 8,
+        // The input carries its own background so it stays legible whatever the
+        // surrounding theme does.
+        backgroundColor: '#fff',
+        color: '#111',
+        fontSize: 14,
+    },
     buttons: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -140,6 +203,9 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderRadius: 8,
         backgroundColor: '#3b6ea5',
+    },
+    buttonDisabled: {
+        opacity: 0.4,
     },
     buttonLabel: {
         color: '#fff',

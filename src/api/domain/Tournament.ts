@@ -8,6 +8,7 @@ import { TournamentDetails } from './TournamentDetails.ts';
 export class Tournament extends AggregateRoot {
     private name = '';
     private currentRound = 0;
+    private totalRounds = 0;
     private tournamentUrl = '';
 
     private constructor(id: string) {
@@ -34,6 +35,7 @@ export class Tournament extends AggregateRoot {
                 tournamentUrl,
                 tournamentDetails.name,
                 tournamentDetails.currentRound,
+                tournamentDetails.totalRounds,
             ),
         );
 
@@ -48,7 +50,11 @@ export class Tournament extends AggregateRoot {
     }
 
     public getDetails(): TournamentDetails {
-        return new TournamentDetails(this.name, this.currentRound);
+        return new TournamentDetails(
+            this.name,
+            this.currentRound,
+            this.totalRounds,
+        );
     }
 
     public getUrl() {
@@ -65,11 +71,18 @@ export class Tournament extends AggregateRoot {
             return null;
         }
 
-        this.apply(new RoundPublished(this.id, tournamentDetails.currentRound));
+        this.apply(
+            new RoundPublished(
+                this.id,
+                tournamentDetails.currentRound,
+                tournamentDetails.totalRounds,
+            ),
+        );
 
         return new Notification(
             this.name,
-            `Round ${tournamentDetails.currentRound} pairings are out`,
+            `Round ${tournamentDetails.currentRound} of ` +
+                `${this.totalRounds} pairings are out`,
             this.id,
         );
     }
@@ -79,12 +92,14 @@ export class Tournament extends AggregateRoot {
             this.tournamentUrl = event.tournamentUrl;
             this.name = event.name;
             this.currentRound = event.currentRound;
+            this.totalRounds = event.totalRounds;
 
             return;
         }
 
         if (event instanceof RoundPublished) {
             this.currentRound = event.round;
+            this.totalRounds = event.totalRounds;
         }
     }
 }

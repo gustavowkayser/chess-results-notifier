@@ -8,6 +8,7 @@ export class TournamentRegistered extends DomainEvent {
         public readonly tournamentUrl: string,
         public readonly name: string,
         public readonly currentRound: number,
+        public readonly totalRounds: number,
         occurredAt?: Date,
     ) {
         super(aggregateId, TournamentRegistered.TYPE, occurredAt);
@@ -18,6 +19,7 @@ export class TournamentRegistered extends DomainEvent {
             tournamentUrl: this.tournamentUrl,
             name: this.name,
             currentRound: this.currentRound,
+            totalRounds: this.totalRounds,
         };
     }
 }

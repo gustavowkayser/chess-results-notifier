@@ -11,6 +11,11 @@ export interface StoredEvent {
 
 type EventFactory = (stored: StoredEvent) => DomainEvent;
 
+// totalRounds was added after the first events were already written, so it is
+// read defensively: an older payload replays as 0 rather than throwing.
+const totalRoundsOf = (stored: StoredEvent): number =>
+    (stored.payload.totalRounds as number | undefined) ?? 0;
+
 const factories: Record<string, EventFactory> = {
     [TournamentRegistered.TYPE]: stored =>
         new TournamentRegistered(
@@ -18,12 +23,14 @@ const factories: Record<string, EventFactory> = {
             stored.payload.tournamentUrl as string,
             stored.payload.name as string,
             stored.payload.currentRound as number,
+            totalRoundsOf(stored),
             new Date(stored.occurredAt),
         ),
     [RoundPublished.TYPE]: stored =>
         new RoundPublished(
             stored.aggregateId,
             stored.payload.round as number,
+            totalRoundsOf(stored),
             new Date(stored.occurredAt),
         ),
 };

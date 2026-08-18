@@ -2,7 +2,7 @@
  * @format
  */
 
-import { ChessResultsProvider } from '../src/api/infrastructure/ChessResultsProvider';
+import { StubTournamentProvider } from '../test-support/StubTournamentProvider';
 import { MonitoringService } from '../src/api/application/services/MonitoringService';
 import { NodeSqliteDatabase } from '../test-support/NodeSqliteDatabase';
 import { Notification } from '../src/api/domain/Notification';
@@ -24,7 +24,7 @@ class RecordingNotifier implements Notifier {
 // Every in-memory database is a separate store, so the database is passed in
 // explicitly: two services sharing one are sharing it on purpose.
 const build = (database: NodeSqliteDatabase) => {
-    const provider = new ChessResultsProvider();
+    const provider = new StubTournamentProvider();
     const repository = new SqliteEventRepository(database);
     const notifier = new RecordingNotifier();
 
@@ -68,11 +68,11 @@ test('a tick notifies once when the round moves on', async () => {
 
     await tournamentService.registerTournament(SAMPLE_URL);
 
-    // The mock provider advances the round on every poll, so this tick sees a
+    // The stub provider advances the round on every poll, so this tick sees a
     // new round and the next one, given a fresh provider, does not.
     expect(await monitoringService.checkAll()).toBe(1);
     expect(notifier.sent).toHaveLength(1);
-    expect(notifier.sent[0].body).toBe('Round 2 pairings are out');
+    expect(notifier.sent[0].body).toBe('Round 2 of 9 pairings are out');
     expect(notifier.sent[0].tag).toBe(SAMPLE_URL);
 });
 
@@ -144,6 +144,7 @@ test('an unreachable tournament does not abort the tick', async () => {
     await tournamentService.registerTournament(SAMPLE_URL);
 
     const failing = {
+        canonicalUrl: (url: string) => url,
         getTournamentDetails: jest.fn(async () => {
             throw new Error('network down');
         }),

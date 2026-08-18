@@ -12,11 +12,16 @@ export class TournamentService {
     async registerTournament(
         tournamentUrl: string,
     ): Promise<TournamentDetails> {
+        // The aggregate id is derived from the URL, so the same tournament
+        // reached with different query parameters has to collapse to one
+        // stream rather than registering twice.
+        const canonicalUrl = this.tournamentProvider.canonicalUrl(tournamentUrl);
+
         const tournamentDetails =
-            await this.tournamentProvider.getTournamentDetails(tournamentUrl);
+            await this.tournamentProvider.getTournamentDetails(canonicalUrl);
 
         const tournament = Tournament.register(
-            tournamentUrl,
+            canonicalUrl,
             tournamentDetails.toDomain(),
         );
 
