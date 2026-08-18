@@ -1,11 +1,12 @@
 import { AndroidNotifier } from './infrastructure/AndroidNotifier.ts';
-import { AsyncStorageEventRepository } from './infrastructure/AsyncStorageEventRepository.ts';
 import { ChessResultsProvider } from './infrastructure/ChessResultsProvider.ts';
 import { MonitoringService } from './application/services/MonitoringService.ts';
+import { OpSqliteDatabase } from './infrastructure/sqlite/OpSqliteDatabase.ts';
+import { SqliteEventRepository } from './infrastructure/SqliteEventRepository.ts';
 import { TournamentService } from './application/services/TournamentService.ts';
 
 const tournamentProvider = new ChessResultsProvider();
-const eventRepository = new AsyncStorageEventRepository();
+const eventRepository = new SqliteEventRepository(new OpSqliteDatabase());
 const notifier = new AndroidNotifier();
 
 const tournamentService = new TournamentService(

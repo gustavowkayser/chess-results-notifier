@@ -2,29 +2,16 @@
  * @format
  */
 
-import { AsyncStorageEventRepository } from '../src/api/infrastructure/AsyncStorageEventRepository';
 import { ChessResultsProvider } from '../src/api/infrastructure/ChessResultsProvider';
 import { MonitoringService } from '../src/api/application/services/MonitoringService';
+import { NodeSqliteDatabase } from '../test-support/NodeSqliteDatabase';
 import { Notification } from '../src/api/domain/Notification';
 import { Notifier } from '../src/api/application/notifiers/Notifier';
+import { SqliteEventRepository } from '../src/api/infrastructure/SqliteEventRepository';
 import { TournamentService } from '../src/api/application/services/TournamentService';
 
-jest.mock('@react-native-async-storage/async-storage', () => {
-    const store = new Map<string, string>();
-
-    return {
-        __esModule: true,
-        default: {
-            getItem: jest.fn(async (key: string) => store.get(key) ?? null),
-            setItem: jest.fn(async (key: string, value: string) => {
-                store.set(key, value);
-            }),
-            clear: jest.fn(async () => store.clear()),
-        },
-    };
-});
-
 const SAMPLE_URL = 'https://s1.chess-results.com/tnr1234567.aspx';
+const OTHER_URL = 'https://s2.chess-results.com/tnr7654321.aspx';
 
 class RecordingNotifier implements Notifier {
     public readonly sent: Notification[] = [];
@@ -34,9 +21,11 @@ class RecordingNotifier implements Notifier {
     }
 }
 
-const build = () => {
+// Every in-memory database is a separate store, so the database is passed in
+// explicitly: two services sharing one are sharing it on purpose.
+const build = (database: NodeSqliteDatabase) => {
     const provider = new ChessResultsProvider();
-    const repository = new AsyncStorageEventRepository();
+    const repository = new SqliteEventRepository(database);
     const notifier = new RecordingNotifier();
 
     return {
@@ -51,14 +40,18 @@ const build = () => {
     };
 };
 
-beforeEach(async () => {
-    const AsyncStorage =
-        require('@react-native-async-storage/async-storage').default;
-    await AsyncStorage.clear();
+let database: NodeSqliteDatabase;
+
+beforeEach(() => {
+    database = new NodeSqliteDatabase();
+});
+
+afterEach(() => {
+    database.close();
 });
 
 test('registering a tournament persists a replayable stream', async () => {
-    const { tournamentService, repository } = build();
+    const { tournamentService, repository } = build(database);
 
     const details = await tournamentService.registerTournament(SAMPLE_URL);
 
@@ -71,7 +64,7 @@ test('registering a tournament persists a replayable stream', async () => {
 });
 
 test('a tick notifies once when the round moves on', async () => {
-    const { tournamentService, monitoringService, notifier } = build();
+    const { tournamentService, monitoringService, notifier } = build(database);
 
     await tournamentService.registerTournament(SAMPLE_URL);
 
@@ -84,13 +77,13 @@ test('a tick notifies once when the round moves on', async () => {
 });
 
 test('a tick with no new round produces no event and no notification', async () => {
-    const { tournamentService, repository } = build();
+    const { tournamentService, repository } = build(database);
 
     await tournamentService.registerTournament(SAMPLE_URL);
 
     // A second service sharing the store but with its own provider, which
     // restarts at round 1 — i.e. the round has not moved on.
-    const stale = build();
+    const stale = build(database);
     const before = (await repository.load(SAMPLE_URL)).length;
 
     expect(await stale.monitoringService.checkAll()).toBe(0);
@@ -99,7 +92,7 @@ test('a tick with no new round produces no event and no notification', async () 
 });
 
 test('saving twice does not append the same events again', async () => {
-    const { tournamentService, repository } = build();
+    const { tournamentService, repository } = build(database);
 
     await tournamentService.registerTournament(SAMPLE_URL);
 
@@ -109,8 +102,44 @@ test('saving twice does not append the same events again', async () => {
     expect(await repository.load(SAMPLE_URL)).toHaveLength(1);
 });
 
+test('streams replay in order and aggregates list in registration order', async () => {
+    const { tournamentService, monitoringService, repository } =
+        build(database);
+
+    await tournamentService.registerTournament(SAMPLE_URL);
+    await tournamentService.registerTournament(OTHER_URL);
+
+    // Two ticks, so each stream holds a registration followed by more than one
+    // round — enough for append order to be observable.
+    await monitoringService.checkAll();
+    await monitoringService.checkAll();
+
+    expect(await repository.listAggregateIds()).toEqual([
+        SAMPLE_URL,
+        OTHER_URL,
+    ]);
+
+    // Both streams are asserted: checkAll saves concurrently, and a failed
+    // write on the second aggregate would otherwise go unnoticed here.
+    for (const url of [SAMPLE_URL, OTHER_URL]) {
+        const events = await repository.load(url);
+
+        expect(events.map(event => event.type)).toEqual([
+            'TournamentRegistered',
+            'RoundPublished',
+            'RoundPublished',
+        ]);
+        expect(events.map(event => event.payload().round)).toEqual([
+            undefined,
+            2,
+            3,
+        ]);
+        expect(events.every(event => event.aggregateId === url)).toBe(true);
+    }
+});
+
 test('an unreachable tournament does not abort the tick', async () => {
-    const { tournamentService, repository, notifier } = build();
+    const { tournamentService, repository, notifier } = build(database);
 
     await tournamentService.registerTournament(SAMPLE_URL);
 

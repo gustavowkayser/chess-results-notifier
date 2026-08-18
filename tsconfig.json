@@ -1,7 +1,9 @@
 {
     "extends": "@react-native/typescript-config",
     "compilerOptions": {
-        "allowImportingTsExtensions": true
+        "allowImportingTsExtensions": true,
+        // "node" is for test-support/, which uses the built-in node:sqlite.
+        "types": ["jest", "node"]
     },
     "include": ["**/*.ts", "**/*.tsx"],
     "exclude": ["**/node_modules", "**/Pods"]

@@ -17,17 +17,19 @@ export class MonitoringService {
     async checkAll(): Promise<number> {
         const ids = await this.eventRepository.listAggregateIds();
 
-        let notifications = ids.filter(async id => {
-            const check = await this.check(id).catch(error => {
-                console.warn(`Failed to check tournament ${id}`, error);
-            });
+        // One unreachable tournament must not abort the tick, so each check
+        // settles on its own and a failure counts as "nothing to notify".
+        const notified = await Promise.all(
+            ids.map(id =>
+                this.check(id).catch(error => {
+                    console.warn(`Failed to check tournament ${id}`, error);
 
-            if (!check) return;
+                    return false;
+                }),
+            ),
+        );
 
-            return id;
-        });
-
-        return notifications.length;
+        return notified.filter(Boolean).length;
     }
 
     private async check(aggregateId: string): Promise<boolean> {
