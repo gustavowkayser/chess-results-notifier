@@ -15,6 +15,15 @@ export class ChessResultsUrl {
         public readonly tournamentId: string,
     ) {}
 
+    /**
+     * Whether the text is a tournament address, without throwing. `parse` is
+     * right to reject loudly for the service; a field being typed into needs
+     * the question answered quietly.
+     */
+    public static isTournamentUrl(text: string): boolean {
+        return TOURNAMENT_URL.test(text.trim());
+    }
+
     public static parse(url: string): ChessResultsUrl {
         const match = TOURNAMENT_URL.exec(url.trim());
 
