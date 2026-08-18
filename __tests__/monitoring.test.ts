@@ -30,6 +30,7 @@ const build = (database: NodeSqliteDatabase) => {
 
     return {
         notifier,
+        provider,
         repository,
         tournamentService: new TournamentService(provider, repository),
         monitoringService: new MonitoringService(
@@ -136,6 +137,58 @@ test('streams replay in order and aggregates list in registration order', async 
         ]);
         expect(events.every(event => event.aggregateId === url)).toBe(true);
     }
+});
+
+test('an unregistered tournament disappears and stops being polled', async () => {
+    const { tournamentService, monitoringService, repository, provider } =
+        build(database);
+
+    await tournamentService.registerTournament(SAMPLE_URL);
+    await tournamentService.registerTournament(OTHER_URL);
+
+    await tournamentService.unregisterTournament(SAMPLE_URL);
+
+    const listed = await tournamentService.listTournaments();
+    expect(listed.map(tournament => tournament.id)).toEqual([OTHER_URL]);
+
+    // The stream is kept: unregistering appends rather than deleting.
+    expect((await repository.load(SAMPLE_URL)).map(e => e.type)).toEqual([
+        'TournamentRegistered',
+        'TournamentUnregistered',
+    ]);
+
+    provider.fetched.length = 0;
+    await monitoringService.checkAll();
+
+    expect(provider.fetched).toEqual([OTHER_URL]);
+});
+
+test('unregistering twice appends a single event', async () => {
+    const { tournamentService, repository } = build(database);
+
+    await tournamentService.registerTournament(SAMPLE_URL);
+    await tournamentService.unregisterTournament(SAMPLE_URL);
+    await tournamentService.unregisterTournament(SAMPLE_URL);
+
+    expect(await repository.load(SAMPLE_URL)).toHaveLength(2);
+});
+
+test('registering again revives an unregistered tournament', async () => {
+    const { tournamentService, repository } = build(database);
+
+    await tournamentService.registerTournament(SAMPLE_URL);
+    await tournamentService.unregisterTournament(SAMPLE_URL);
+    await tournamentService.registerTournament(SAMPLE_URL);
+
+    const listed = await tournamentService.listTournaments();
+    expect(listed.map(tournament => tournament.id)).toEqual([SAMPLE_URL]);
+
+    // One stream throughout, so the history of having been removed survives.
+    expect((await repository.load(SAMPLE_URL)).map(e => e.type)).toEqual([
+        'TournamentRegistered',
+        'TournamentUnregistered',
+        'TournamentRegistered',
+    ]);
 });
 
 test('an unreachable tournament does not abort the tick', async () => {

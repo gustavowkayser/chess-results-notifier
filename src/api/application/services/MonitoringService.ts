@@ -39,6 +39,11 @@ export class MonitoringService {
 
         const tournament = Tournament.rehydrate(aggregateId, events);
 
+        // The stream outlives unregistering, so a removed tournament is still
+        // listed here. Skipping it before the fetch is what actually stops the
+        // polling.
+        if (tournament.isUnregistered()) return false;
+
         const details = await this.tournamentProvider.getTournamentDetails(
             tournament.getUrl(),
         );

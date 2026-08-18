@@ -12,6 +12,9 @@ const TOTAL_ROUNDS = 9;
 export class StubTournamentProvider implements TournamentProvider {
     private readonly rounds = new Map<string, number>();
 
+    /** Every URL fetched, so tests can assert what was and was not polled. */
+    public readonly fetched: string[] = [];
+
     public constructor(private readonly totalRounds: number = TOTAL_ROUNDS) {}
 
     public canonicalUrl(tournamentUrl: string): string {
@@ -21,6 +24,8 @@ export class StubTournamentProvider implements TournamentProvider {
     public async getTournamentDetails(
         tournamentUrl: string,
     ): Promise<TournamentDetailsDTO> {
+        this.fetched.push(tournamentUrl);
+
         const round = (this.rounds.get(tournamentUrl) ?? 0) + 1;
         this.rounds.set(tournamentUrl, round);
 

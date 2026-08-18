@@ -26,12 +26,24 @@ export class MonitoringController {
         return result === PermissionsAndroid.RESULTS.GRANTED;
     }
 
+    /**
+     * Returns false when the notification permission was refused, in which case
+     * monitoring is not started: running it would poll and notify into nothing,
+     * leaving the UI claiming to be on.
+     */
     static async start(
         intervalSeconds: number = DEFAULT_INTERVAL_SECONDS,
-    ): Promise<void> {
-        await MonitoringController.requestNotificationPermission();
+    ): Promise<boolean> {
+        const granted =
+            await MonitoringController.requestNotificationPermission();
+
+        if (!granted) {
+            return false;
+        }
 
         requireNativeMonitoring().startMonitoring(intervalSeconds);
+
+        return true;
     }
 
     static stop(): void {

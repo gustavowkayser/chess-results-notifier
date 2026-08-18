@@ -30,13 +30,34 @@ export class TournamentService {
         return tournament.getDetails();
     }
 
+    /**
+     * Stops tracking a tournament. The stream is kept — the aggregate records
+     * that it was unregistered — so this is an append, not a delete.
+     */
+    async unregisterTournament(tournamentUrl: string): Promise<void> {
+        const canonicalUrl = this.tournamentProvider.canonicalUrl(tournamentUrl);
+        const events = await this.eventRepository.load(canonicalUrl);
+
+        if (!events.length) {
+            return;
+        }
+
+        const tournament = Tournament.rehydrate(canonicalUrl, events);
+        tournament.unregister();
+
+        await this.eventRepository.save(tournament);
+    }
+
+    /** Only the tournaments still being tracked. */
     async listTournaments(): Promise<Tournament[]> {
         const ids = await this.eventRepository.listAggregateIds();
 
-        return await Promise.all(
+        const tournaments = await Promise.all(
             ids.map(async id =>
                 Tournament.rehydrate(id, await this.eventRepository.load(id)),
             ),
         );
+
+        return tournaments.filter(tournament => !tournament.isUnregistered());
     }
 }

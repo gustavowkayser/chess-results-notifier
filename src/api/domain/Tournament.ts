@@ -3,6 +3,7 @@ import { DomainEvent } from './DomainEvent.ts';
 import { Notification } from './Notification.ts';
 import { RoundPublished } from './events/RoundPublished.ts';
 import { TournamentRegistered } from './events/TournamentRegistered.ts';
+import { TournamentUnregistered } from './events/TournamentUnregistered.ts';
 import { TournamentDetails } from './TournamentDetails.ts';
 
 export class Tournament extends AggregateRoot {
@@ -10,6 +11,7 @@ export class Tournament extends AggregateRoot {
     private currentRound = 0;
     private totalRounds = 0;
     private tournamentUrl = '';
+    private unregistered = false;
 
     private constructor(id: string) {
         super(id);
@@ -61,6 +63,22 @@ export class Tournament extends AggregateRoot {
         return this.tournamentUrl;
     }
 
+    public isUnregistered() {
+        return this.unregistered;
+    }
+
+    /**
+     * Stops tracking. Unregistering something already unregistered produces no
+     * event, so a repeated tap does not pad the stream.
+     */
+    public unregister(): void {
+        if (this.unregistered) {
+            return;
+        }
+
+        this.apply(new TournamentUnregistered(this.id));
+    }
+
     /**
      * Records what the provider currently reports. Returns a notification only
      * when the round actually moved on, so a monitoring tick that sees no
@@ -93,6 +111,8 @@ export class Tournament extends AggregateRoot {
             this.name = event.name;
             this.currentRound = event.currentRound;
             this.totalRounds = event.totalRounds;
+            // Registering again revives a stream that was unregistered.
+            this.unregistered = false;
 
             return;
         }
@@ -100,6 +120,12 @@ export class Tournament extends AggregateRoot {
         if (event instanceof RoundPublished) {
             this.currentRound = event.round;
             this.totalRounds = event.totalRounds;
+
+            return;
+        }
+
+        if (event instanceof TournamentUnregistered) {
+            this.unregistered = true;
         }
     }
 }

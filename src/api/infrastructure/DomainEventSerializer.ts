@@ -1,6 +1,7 @@
 import { DomainEvent } from '../domain/DomainEvent.ts';
 import { RoundPublished } from '../domain/events/RoundPublished.ts';
 import { TournamentRegistered } from '../domain/events/TournamentRegistered.ts';
+import { TournamentUnregistered } from '../domain/events/TournamentUnregistered.ts';
 
 export interface StoredEvent {
     aggregateId: string;
@@ -31,6 +32,11 @@ const factories: Record<string, EventFactory> = {
             stored.aggregateId,
             stored.payload.round as number,
             totalRoundsOf(stored),
+            new Date(stored.occurredAt),
+        ),
+    [TournamentUnregistered.TYPE]: stored =>
+        new TournamentUnregistered(
+            stored.aggregateId,
             new Date(stored.occurredAt),
         ),
 };

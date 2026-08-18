@@ -1,21 +1,15 @@
 /**
- * Development harness for the Kotlin <-> TypeScript monitoring bridge.
- * The real tournament UI replaces this.
- *
  * @format
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     DeviceEventEmitter,
-    Pressable,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
-    TextInput,
     View,
-    useColorScheme,
 } from 'react-native';
 import {
     SafeAreaProvider,
@@ -23,18 +17,22 @@ import {
 } from 'react-native-safe-area-context';
 import { MonitoringController } from './src/monitoring/MonitoringController';
 import { tournamentService } from './src/api';
+import { NotificationsToggle } from './src/ui/NotificationsToggle';
+import { TournamentInput } from './src/ui/TournamentInput';
+import {
+    TournamentCard,
+    TournamentCardModel,
+} from './src/ui/TournamentCard';
+import { theme } from './src/ui/theme';
 
-const URL_PLACEHOLDER = 'https://s1.chess-results.com/tnr1477210.aspx';
-const TICK_INTERVAL_SECONDS = 10;
+const TICK_INTERVAL_SECONDS = 60;
 
 function App() {
-    const isDarkMode = useColorScheme() === 'dark';
-
     return (
         <SafeAreaProvider>
-            <StatusBar
-                barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-            />
+            {/* No backgroundColor: RN 0.87 dropped it for edge-to-edge. The
+                container paints behind the status bar via the safe-area inset. */}
+            <StatusBar barStyle="light-content" />
             <AppContent />
         </SafeAreaProvider>
     );
@@ -42,27 +40,78 @@ function App() {
 
 function AppContent() {
     const safeAreaInsets = useSafeAreaInsets();
-    const [log, setLog] = useState<string[]>([]);
+
+    const [tournaments, setTournaments] = useState<TournamentCardModel[]>([]);
     const [monitoring, setMonitoring] = useState(false);
+    const [togglingMonitoring, setTogglingMonitoring] = useState(false);
     const [url, setUrl] = useState('');
     const [registering, setRegistering] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const append = (line: string) =>
-        setLog(previous => [
-            `${new Date().toLocaleTimeString()}  ${line}`,
-            ...previous,
-        ]);
+    const refresh = useCallback(async () => {
+        const tracked = await tournamentService.listTournaments();
+
+        setTournaments(
+            tracked.map(tournament => {
+                const details = tournament.getDetails();
+
+                return {
+                    id: tournament.id,
+                    name: details.name,
+                    currentRound: details.currentRound,
+                    totalRounds: details.totalRounds,
+                };
+            }),
+        );
+    }, []);
 
     useEffect(() => {
+        // A tick may have advanced a round, so the cards are refreshed rather
+        // than left stale until the app restarts.
         const subscription = DeviceEventEmitter.addListener(
             'onMonitoringTick',
-            () => append('native tick'),
+            () => {
+                refresh();
+            },
         );
 
         MonitoringController.isMonitoring().then(setMonitoring);
+        refresh();
 
         return () => subscription.remove();
-    }, []);
+    }, [refresh]);
+
+    const toggleMonitoring = async (next: boolean) => {
+        setTogglingMonitoring(true);
+        setError(null);
+
+        try {
+            if (!next) {
+                MonitoringController.stop();
+                setMonitoring(false);
+
+                return;
+            }
+
+            const started = await MonitoringController.start(
+                TICK_INTERVAL_SECONDS,
+            );
+
+            setMonitoring(started);
+
+            if (!started) {
+                setError(
+                    'Notifications are blocked for this app. Enable them in ' +
+                        'Android settings to get round alerts.',
+                );
+            }
+        } catch (caught) {
+            setMonitoring(false);
+            setError((caught as Error).message);
+        } finally {
+            setTogglingMonitoring(false);
+        }
+    };
 
     const register = async () => {
         const tournamentUrl = url.trim();
@@ -71,98 +120,73 @@ function AppContent() {
             return;
         }
 
-        // Registering now scrapes chess-results, so it is slow enough to need a
-        // pending state and can fail on either a malformed URL or the network.
+        // Registering scrapes chess-results, so it is slow enough to need a
+        // pending state and can fail on a bad URL or on the network.
         setRegistering(true);
+        setError(null);
 
         try {
-            const details = await tournamentService.registerTournament(
-                tournamentUrl,
-            );
-
-            append(
-                `registered "${details.name}" at round ` +
-                    `${details.currentRound} of ${details.totalRounds}`,
-            );
+            await tournamentService.registerTournament(tournamentUrl);
             setUrl('');
-        } catch (error) {
-            append(`could not register: ${(error as Error).message}`);
+            await refresh();
+        } catch (caught) {
+            setError((caught as Error).message);
         } finally {
             setRegistering(false);
         }
     };
 
-    const start = async () => {
-        await MonitoringController.start(TICK_INTERVAL_SECONDS);
-        setMonitoring(true);
-        append(`monitoring every ${TICK_INTERVAL_SECONDS}s`);
-    };
+    const unregister = async (id: string) => {
+        setError(null);
 
-    const stop = () => {
-        MonitoringController.stop();
-        setMonitoring(false);
-        append('monitoring stopped');
+        try {
+            await tournamentService.unregisterTournament(id);
+            await refresh();
+        } catch (caught) {
+            setError((caught as Error).message);
+        }
     };
 
     return (
-        <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
-            <Text style={styles.title}>Monitoring bridge</Text>
-            <Text style={styles.status}>
-                {monitoring ? 'running' : 'stopped'}
-            </Text>
+        <View
+            style={[styles.container, { paddingTop: safeAreaInsets.top + 16 }]}
+        >
+            <Text style={styles.title}>Chess Results Notifier</Text>
 
-            <TextInput
-                style={styles.input}
-                value={url}
-                onChangeText={setUrl}
-                placeholder={URL_PLACEHOLDER}
-                placeholderTextColor="#9aa0a6"
-                autoCapitalize="none"
-                autoCorrect={false}
-                inputMode="url"
-                editable={!registering}
-                returnKeyType="go"
-                onSubmitEditing={register}
+            <NotificationsToggle
+                enabled={monitoring}
+                onChange={toggleMonitoring}
+                busy={togglingMonitoring}
             />
 
-            <View style={styles.buttons}>
-                <Button
-                    label={registering ? 'Registering…' : 'Register'}
-                    onPress={register}
-                    disabled={registering || url.trim().length === 0}
-                />
-                <Button label="Start" onPress={start} />
-                <Button label="Stop" onPress={stop} />
-            </View>
+            <TournamentInput
+                value={url}
+                onChangeText={setUrl}
+                onSubmit={register}
+                busy={registering}
+                error={error}
+            />
 
-            <ScrollView style={styles.log}>
-                {log.map((line, index) => (
-                    <Text key={index} style={styles.logLine}>
-                        {line}
+            <ScrollView
+                style={styles.list}
+                contentContainerStyle={styles.listContent}
+            >
+                {tournaments.length === 0 ? (
+                    <Text style={styles.empty}>
+                        No tournaments yet. Paste a chess-results link above to
+                        start tracking one.
                     </Text>
-                ))}
+                ) : (
+                    tournaments.map(tournament => (
+                        <TournamentCard
+                            key={tournament.id}
+                            tournament={tournament}
+                            onUnregister={unregister}
+                        />
+                    ))
+                )}
             </ScrollView>
         </View>
-    );
-}
-
-function Button({
-    label,
-    onPress,
-    disabled = false,
-}: {
-    label: string;
-    onPress: () => void | Promise<void>;
-    disabled?: boolean;
-}) {
-    return (
-        <Pressable
-            style={[styles.button, disabled && styles.buttonDisabled]}
-            onPress={onPress}
-            disabled={disabled}
-        >
-            <Text style={styles.buttonLabel}>{label}</Text>
-        </Pressable>
     );
 }
 
@@ -170,54 +194,25 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         padding: 16,
+        backgroundColor: theme.background,
     },
     title: {
-        fontSize: 20,
-        fontWeight: '600',
+        color: theme.text,
+        fontSize: 22,
+        fontWeight: '700',
+        marginBottom: 16,
     },
-    status: {
-        marginTop: 4,
-        opacity: 0.6,
-    },
-    input: {
-        marginTop: 16,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderWidth: 1,
-        borderColor: '#c4c7c5',
-        borderRadius: 8,
-        // The input carries its own background so it stays legible whatever the
-        // surrounding theme does.
-        backgroundColor: '#fff',
-        color: '#111',
-        fontSize: 14,
-    },
-    buttons: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginVertical: 16,
-    },
-    button: {
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 8,
-        backgroundColor: '#3b6ea5',
-    },
-    buttonDisabled: {
-        opacity: 0.4,
-    },
-    buttonLabel: {
-        color: '#fff',
-        fontWeight: '500',
-    },
-    log: {
+    list: {
         flex: 1,
+        marginTop: 20,
     },
-    logLine: {
-        fontFamily: 'monospace',
-        fontSize: 12,
-        paddingVertical: 2,
+    listContent: {
+        paddingBottom: 24,
+    },
+    empty: {
+        color: theme.muted,
+        fontSize: 14,
+        lineHeight: 20,
     },
 });
 
