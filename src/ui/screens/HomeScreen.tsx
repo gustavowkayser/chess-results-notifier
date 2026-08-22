@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     DeviceEventEmitter,
     Linking,
@@ -13,6 +13,7 @@ import { MonitoringController } from '../../monitoring/MonitoringController.ts';
 import { tournamentService } from '../../api';
 import { SearchBarButton } from '../SearchBarButton.tsx';
 import { Switch } from '../Switch.tsx';
+import { useToast } from '../Toast.tsx';
 import { TournamentCard, TournamentCardModel } from '../TournamentCard.tsx';
 import { theme } from '../theme.ts';
 
@@ -33,11 +34,17 @@ export function HomeScreen({
     navigation: HomeScreenNavigation;
 }) {
     const safeAreaInsets = useSafeAreaInsets();
+    const showToast = useToast();
 
     const [tournaments, setTournaments] = useState<TournamentCardModel[]>([]);
     const [monitoring, setMonitoring] = useState(false);
     const [togglingMonitoring, setTogglingMonitoring] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Cards taken off screen ahead of the server. A refresh already in flight
+    // — or the tick a minute later — would otherwise read a list the delete has
+    // not landed on yet and put the card straight back.
+    const pendingRemovals = useRef(new Set<string>());
 
     const refresh = useCallback(async () => {
         // The list comes over the network now, so it can fail where reading the
@@ -47,13 +54,18 @@ export function HomeScreen({
             const tracked = await tournamentService.listTournaments();
 
             setTournaments(
-                tracked.map(tournament => ({
-                    id: tournament.url,
-                    name: tournament.name,
-                    currentRound: tournament.currentRound,
-                    totalRounds: tournament.totalRounds,
-                    updatedAt: tournament.updatedAt,
-                })),
+                tracked
+                    .filter(
+                        tournament =>
+                            !pendingRemovals.current.has(tournament.url),
+                    )
+                    .map(tournament => ({
+                        id: tournament.url,
+                        name: tournament.name,
+                        currentRound: tournament.currentRound,
+                        totalRounds: tournament.totalRounds,
+                        updatedAt: tournament.updatedAt,
+                    })),
             );
         } catch (caught) {
             setError((caught as Error).message);
@@ -129,14 +141,30 @@ export function HomeScreen({
         }
     };
 
+    // The card leaves as soon as the tap lands, rather than a couple of
+    // seconds later when the delete comes back. Nothing on the card could say
+    // it was working, so the wait read as a tap that had missed.
     const unregister = async (id: string) => {
         setError(null);
 
+        pendingRemovals.current.add(id);
+        setTournaments(current =>
+            current.filter(tournament => tournament.id !== id),
+        );
+
         try {
             await tournamentService.unregisterTournament(id);
-            await refresh();
+            pendingRemovals.current.delete(id);
+            showToast('Tournament removed');
         } catch (caught) {
+            pendingRemovals.current.delete(id);
             setError((caught as Error).message);
+            showToast('Could not remove tournament', 'error');
+
+            // The tournament is still tracked, so its card belongs back on
+            // screen. Re-reading the list rather than restoring the model kept
+            // aside picks up anything else that moved in the meantime.
+            await refresh();
         }
     };
 

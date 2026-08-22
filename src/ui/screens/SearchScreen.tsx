@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, ArrowUpRight, Link, Search, X } from 'lucide-react-native';
 import { isTournamentUrl, tournamentService } from '../../api';
+import { useToast } from '../Toast.tsx';
 import { theme } from '../theme.ts';
 
 const PLACEHOLDER = 'Paste a chess-results link…';
@@ -28,6 +29,7 @@ export function SearchScreen({
     navigation: SearchScreenNavigation;
 }) {
     const safeAreaInsets = useSafeAreaInsets();
+    const showToast = useToast();
 
     const [query, setQuery] = useState('');
     const [busy, setBusy] = useState(false);
@@ -48,6 +50,10 @@ export function SearchScreen({
 
         try {
             await tournamentService.registerTournament(trimmed);
+
+            // The confirmation has to outlive this screen: by the time it is
+            // read the user is back on the list, looking for the card.
+            showToast('Tournament added');
             navigation.goBack();
         } catch (caught) {
             setError((caught as Error).message);
