@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet } from 'react-native';
 import { theme } from './theme.ts';
 
-const TRACK_WIDTH = 45;
-const TRACK_HEIGHT = 26;
-const THUMB_SIZE = 16;
+const TRACK_WIDTH = 46;
+const TRACK_HEIGHT = 28;
+const THUMB_SIZE = 20;
 const PADDING = (TRACK_HEIGHT - THUMB_SIZE) / 2;
 const TRAVEL = TRACK_WIDTH - THUMB_SIZE - PADDING * 2;
 
@@ -60,6 +60,13 @@ export function Switch({
                     style={[
                         styles.thumb,
                         {
+                            // A white thumb vanishes into lime. It darkens as
+                            // the track lights up so the contrast holds at both
+                            // ends of the travel.
+                            backgroundColor: progress.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['#ffffff', theme.onAccent],
+                            }),
                             transform: [
                                 {
                                     translateX: progress.interpolate({
@@ -83,14 +90,11 @@ const styles = StyleSheet.create({
         borderRadius: TRACK_HEIGHT / 2,
         padding: PADDING,
         justifyContent: 'center',
-        outlineWidth: 2,
-        outlineColor: '#ffffff'
     },
     thumb: {
         width: THUMB_SIZE,
         height: THUMB_SIZE,
         borderRadius: THUMB_SIZE / 2,
-        backgroundColor: '#ffffff',
     },
     disabled: {
         opacity: 0.5,

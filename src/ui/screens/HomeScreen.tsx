@@ -8,7 +8,7 @@ import {
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell } from 'lucide-react-native';
+import { Bell, Crown } from 'lucide-react-native';
 import { MonitoringController } from '../../monitoring/MonitoringController.ts';
 import { tournamentService } from '../../api';
 import { SearchBarButton } from '../SearchBarButton.tsx';
@@ -142,16 +142,49 @@ export function HomeScreen({
 
     return (
         <View
-            style={[styles.container, { paddingTop: safeAreaInsets.top + 16 }]}
+            style={[styles.container, { paddingTop: safeAreaInsets.top + 12 }]}
         >
-            <Text style={styles.title}>Chess Results Notifier</Text>
+            <View style={styles.header}>
+                <View style={styles.brand}>
+                    <View style={styles.mark}>
+                        <Crown size={16} color={theme.accent} />
+                    </View>
+                    <Text style={styles.wordmark}>CHESSNOTIFY</Text>
+                </View>
+
+                {/* Whether the app is actually watching, stated where the eye
+                    lands first. The toggle that changes it is below. */}
+                <View style={styles.status}>
+                    <View
+                        style={[
+                            styles.statusDot,
+                            !monitoring && styles.statusDotOff,
+                        ]}
+                    />
+                    <Text style={styles.statusText}>
+                        {monitoring ? 'LIVE' : 'PAUSED'}
+                    </Text>
+                </View>
+            </View>
+
+            <Text style={styles.display}>Keep track of your tournaments</Text>
 
             <SearchBarButton onPress={() => navigation.navigate('Search')} />
 
             <View style={styles.toggleRow}>
+                <View style={styles.toggleIcon}>
+                    <Bell
+                        size={17}
+                        color={monitoring ? theme.accent : theme.muted}
+                    />
+                </View>
                 <View style={styles.toggleLabel}>
-                    <Bell size={18} color={theme.muted} />
-                    <Text style={styles.toggleText}>Notifications</Text>
+                    <Text style={styles.toggleText}>Round alerts</Text>
+                    <Text style={styles.toggleHint}>
+                        {monitoring
+                            ? 'Checking every minute'
+                            : 'Not checking for new rounds'}
+                    </Text>
                 </View>
                 <Switch
                     value={monitoring}
@@ -161,21 +194,32 @@ export function HomeScreen({
                 />
             </View>
 
-            {error !== null && <Text style={styles.error}>{error}</Text>}
+            {error !== null && (
+                <View style={styles.errorBox}>
+                    <Text style={styles.error}>{error}</Text>
+                </View>
+            )}
 
-            <Text style={styles.sectionLabel}>
-                TOURNAMENTS · {tournaments.length}
-            </Text>
+            <View style={styles.sectionRow}>
+                <Text style={styles.sectionLabel}>TOURNAMENTS</Text>
+                <View style={styles.count}>
+                    <Text style={styles.countText}>{tournaments.length}</Text>
+                </View>
+            </View>
 
             <ScrollView
                 style={styles.list}
                 contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
             >
                 {tournaments.length === 0 ? (
-                    <Text style={styles.empty}>
-                        No tournaments yet. Tap the bar above to add a
-                        chess-results link.
-                    </Text>
+                    <View style={styles.emptyCard}>
+                        <Text style={styles.emptyTitle}>Nothing tracked yet</Text>
+                        <Text style={styles.empty}>
+                            Tap the bar above and paste a chess-results link to
+                            get an alert the moment a new round goes up.
+                        </Text>
+                    </View>
                 ) : (
                     tournaments.map(tournament => (
                         <TournamentCard
@@ -194,60 +238,149 @@ export function HomeScreen({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 16,
+        paddingHorizontal: 20,
         backgroundColor: theme.background,
     },
-    title: {
-        color: theme.text,
-        fontSize: 22,
-        fontWeight: '700',
-        marginBottom: 16,
-    },
-    toggleRow: {
+    header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: theme.card,
-        borderColor: theme.border,
-        borderWidth: 1,
-        borderRadius: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        marginTop: 12,
     },
-    toggleLabel: {
+    brand: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
     },
-    toggleText: {
+    mark: {
+        width: 34,
+        height: 34,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
+    },
+    wordmark: {
+        ...theme.type.label,
+        color: theme.muted,
+    },
+    status: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
+    },
+    statusDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: theme.accent,
+    },
+    statusDotOff: {
+        backgroundColor: theme.faint,
+    },
+    display: {
+        ...theme.type.display,
         color: theme.text,
-        fontSize: 16,
-        fontWeight: '500',
+        marginTop: 28,
+        marginBottom: 24,
+        // Holds the headline to two lines on a phone, which is the proportion
+        // the reference layouts are built on.
+        maxWidth: 280,
+    },
+    statusText: {
+        ...theme.type.label,
+        fontSize: 10,
+        color: theme.text,
+    },
+    toggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        backgroundColor: theme.card,
+        borderRadius: theme.radius.card,
+        padding: 16,
+        marginTop: 12,
+    },
+    toggleIcon: {
+        width: 38,
+        height: 38,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
+    },
+    toggleLabel: {
+        flex: 1,
+    },
+    toggleText: {
+        ...theme.type.body,
+        fontFamily: theme.fonts.medium,
+        color: theme.text,
+    },
+    toggleHint: {
+        ...theme.type.meta,
+        fontSize: 12,
+        color: theme.muted,
+        marginTop: 2,
+    },
+    sectionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 28,
+        marginBottom: 14,
     },
     sectionLabel: {
+        ...theme.type.label,
         color: theme.muted,
-        fontSize: 12,
-        fontWeight: '700',
-        letterSpacing: 1,
-        marginTop: 24,
+    },
+    count: {
+        minWidth: 22,
+        height: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 7,
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
+    },
+    countText: {
+        fontFamily: theme.fonts.semibold,
+        fontSize: 11,
+        color: theme.muted,
     },
     list: {
         flex: 1,
-        marginTop: 12,
     },
     listContent: {
-        paddingBottom: 24,
+        paddingBottom: 32,
+    },
+    emptyCard: {
+        backgroundColor: theme.card,
+        borderRadius: theme.radius.card,
+        padding: 20,
+    },
+    emptyTitle: {
+        ...theme.type.title,
+        color: theme.text,
+        marginBottom: 6,
     },
     empty: {
+        ...theme.type.meta,
         color: theme.muted,
-        fontSize: 14,
         lineHeight: 20,
     },
-    error: {
+    errorBox: {
         marginTop: 12,
+        padding: 14,
+        borderRadius: theme.radius.control,
+        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    },
+    error: {
+        ...theme.type.meta,
         color: theme.danger,
-        fontSize: 13,
         lineHeight: 18,
     },
 });

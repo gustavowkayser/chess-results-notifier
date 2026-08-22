@@ -96,6 +96,15 @@ const render = async () => {
             act(() =>
                 tree.root.findByProps({ testID: `open-${id}` }).props.onPress(),
             ),
+        openButton: (id: string) =>
+            act(() =>
+                tree.root
+                    .findByProps({ testID: `open-button-${id}` })
+                    .props.onPress(),
+            ),
+        ring: () =>
+            tree.root.findByProps({ accessibilityRole: 'progressbar' }).props
+                .accessibilityLabel,
         remove: (id: string) =>
             act(() =>
                 tree.root
@@ -114,7 +123,7 @@ describe('tournament list', () => {
     test('shows an empty state when nothing is tracked', async () => {
         const { text } = await render();
 
-        expect(text()).toContain('No tournaments yet');
+        expect(text()).toContain('Nothing tracked yet');
     });
 
     test('renders a card per tournament with its round', async () => {
@@ -232,6 +241,42 @@ describe('tournament list', () => {
         expect(text()).toContain('Could not open the chess-results page');
 
         openURL.mockRestore();
+    });
+
+    // The title and the lime button are one action with two affordances; a
+    // regression in either leaves the card looking tappable where it is not.
+    test('opens the page from the call-to-action button as well', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        const openURL = jest
+            .spyOn(Linking, 'openURL')
+            .mockResolvedValue(true as never);
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const { openButton } = await render();
+        await openButton(id);
+
+        expect(openURL).toHaveBeenCalledWith(id);
+
+        openURL.mockRestore();
+    });
+
+    // The ring is the only place the round appears as a shape rather than as
+    // words, so it has to carry the same reading for a screen reader.
+    test('labels the progress ring with the round it draws', async () => {
+        mockListTournaments.mockResolvedValue([
+            tracked(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+            ),
+        ]);
+
+        const { ring } = await render();
+
+        expect(ring()).toBe('Round 5 of 7');
     });
 
     test('unregisters and refreshes', async () => {
