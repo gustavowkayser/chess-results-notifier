@@ -1,4 +1,4 @@
-import { ChessResultsUrl } from '../src/api/infrastructure/chessresults/ChessResultsUrl.ts';
+import { ChessResultsUrl } from '../supabase/functions/_shared/chessresults/ChessResultsUrl.ts';
 
 describe('ChessResultsUrl.isTournamentUrl', () => {
     test('accepts a tournament URL on any mirror', () => {

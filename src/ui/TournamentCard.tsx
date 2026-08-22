@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Trash2 } from 'lucide-react-native';
+import { Trash2, Link } from 'lucide-react-native';
 import { formatRelativeTime } from './relativeTime.ts';
 import { theme } from './theme.ts';
 
@@ -46,16 +46,36 @@ const metaLabel = (tournament: TournamentCardModel) => {
 export function TournamentCard({
     tournament,
     onUnregister,
+    onOpen,
 }: {
     tournament: TournamentCardModel;
     onUnregister: (id: string) => void | Promise<void>;
+    onOpen: (id: string) => void | Promise<void>;
 }) {
     return (
         <View style={styles.card}>
             <View style={styles.details}>
-                <Text style={styles.name} numberOfLines={2}>
-                    {tournament.name}
-                </Text>
+                {/*
+                 * The name is the call to action: the id is the tournament's
+                 * chess-results address, so tapping it goes to the page the
+                 * card is summarising.
+                 */}
+                <Pressable
+                    style={({ pressed }) => [
+                        styles.link,
+                        pressed && styles.linkPressed,
+                    ]}
+                    onPress={() => onOpen(tournament.id)}
+                    testID={`open-${tournament.id}`}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Open ${tournament.name} on chess-results`}
+                    hitSlop={4}
+                >
+                    <Link size={18} color={theme.accent} />
+                    <Text style={styles.name} numberOfLines={2}>
+                        {tournament.name}
+                    </Text>
+                </Pressable>
                 <Text style={styles.meta}>{metaLabel(tournament)}</Text>
             </View>
 
@@ -78,19 +98,20 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
-        backgroundColor: theme.card,
+        backgroundColor: 'rgb(0, 0, 0, 0)',
         borderColor: theme.border,
         borderWidth: 1,
         borderRadius: 12,
         padding: 14,
         marginBottom: 10,
-        height: 96,
+        height: 100,
     },
     details: {
         flex: 1,
     },
     name: {
-        color: theme.text,
+        flexShrink: 1,
+        color: theme.accent,
         fontSize: 15,
         fontWeight: '600',
     },
@@ -107,5 +128,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 10,
+    },
+    link: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingRight: 12,
+    },
+    linkPressed: {
+        opacity: 0.6,
     },
 });

@@ -30,3 +30,52 @@ gonna use.
 ## Architecture
 
 For this project it makes sense to go with Event Sourcing since history and auditing could be crucial.
+
+The scraping runs on Supabase rather than on the phones. Each device used to poll
+chess-results itself, which cost one request per tournament *per user* every
+minute — 200 people following the same open meant 200 requests a minute for one
+page. Now a scheduled job scrapes each tournament once and every follower reads
+the result, so the load on chess-results scales with tournaments and not with
+users.
+
+```
+pg_cron (every minute)
+  -> refresh-tournaments      scrapes tournaments with at least one follower,
+                              appends RoundPublished when a round moves on
+
+app (search screen)
+  -> register-tournament      scrapes only if nobody has followed it before,
+     unregister-tournament    then records this user's subscription
+
+app (60s tick)
+  -> claim_pending_rounds()   rounds this user has not been told about yet,
+                              claimed and shown as a local notification
+```
+
+The event log is the source of truth. Two kinds of stream share it: a `tournament`
+stream per tournament, shared and written only by the refresh job, and a
+`subscription` stream per user per tournament. `tournaments` and `subscriptions`
+are projections, kept in step by a trigger so an append and its projection land
+in one transaction.
+
+### Layout
+
+| Path | What lives there |
+| --- | --- |
+| `src/` | The React Native app. Holds no domain state of its own any more. |
+| `supabase/migrations/` | Schema, projections, RLS, the two RPCs, the cron job. |
+| `supabase/functions/_shared/` | Domain, application and scraping code. Plain TypeScript — Jest and Metro compile it too, which is why the app imports `ChessResultsUrl` from here rather than keeping a second copy. |
+| `supabase/functions/_shared/edge/` | The Deno-only adapters. Excluded from the app's tsconfig. |
+
+### Running it
+
+```bash
+npm test                  # domain, scraping and screens
+npx supabase start        # needs docker
+npx supabase db reset     # applies every migration from scratch
+npx supabase functions serve
+```
+
+Deploying needs `supabase db push`, `supabase functions deploy`, anonymous
+sign-ins enabled on the project, and the two Vault secrets the cron migration
+documents.

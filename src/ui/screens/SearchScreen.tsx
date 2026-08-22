@@ -182,7 +182,7 @@ function Results({
                 Paste a chess-results tournament link to start tracking it.
             </Text>
             <Text style={styles.example}>
-                https://s1.chess-results.com/tnr1477210.aspx
+                https://s1.chess-results.com/tnrxxxxxxx.aspx
             </Text>
         </View>
     );
@@ -210,11 +210,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
-        backgroundColor: theme.surface,
+        backgroundColor: 'rgb(0,0,0,0)',
         borderColor: theme.border,
         borderWidth: 1,
-        borderRadius: 12,
+        borderRadius: 99,
         paddingHorizontal: 14,
+        paddingVertical: 4,
     },
     input: {
         flex: 1,

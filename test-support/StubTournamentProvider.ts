@@ -1,12 +1,12 @@
-import { TournamentDetailsDTO } from '../src/api/application/dtos/TournamentDetailsDTO.ts';
-import { TournamentProvider } from '../src/api/application/providers/TournamentProvider.ts';
+import { TournamentDetailsDTO } from '../supabase/functions/_shared/application/dtos/TournamentDetailsDTO.ts';
+import { TournamentProvider } from '../supabase/functions/_shared/application/providers/TournamentProvider.ts';
 
 const TOTAL_ROUNDS = 9;
 
 /**
  * The behaviour ChessResultsProvider had while it was a mock: the round
  * advances on every poll, per tournament. It moved here when the provider
- * started making real requests, so the monitoring tests keep exercising the
+ * started making real requests, so the refresh tests keep exercising the
  * pipeline without touching the network.
  */
 export class StubTournamentProvider implements TournamentProvider {

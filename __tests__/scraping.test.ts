@@ -3,9 +3,9 @@
  */
 
 import { readFileSync } from 'fs';
-import { ChessResultsProvider } from '../src/api/infrastructure/ChessResultsProvider';
-import { ChessResultsUrl } from '../src/api/infrastructure/chessresults/ChessResultsUrl';
-import { TournamentPageParser } from '../src/api/infrastructure/chessresults/TournamentPageParser';
+import { ChessResultsProvider } from '../supabase/functions/_shared/chessresults/ChessResultsProvider.ts';
+import { ChessResultsUrl } from '../supabase/functions/_shared/chessresults/ChessResultsUrl.ts';
+import { TournamentPageParser } from '../supabase/functions/_shared/chessresults/TournamentPageParser.ts';
 
 const fixture = (name: string) =>
     readFileSync(`${__dirname}/fixtures/chess-results-${name}.html`, 'utf8');

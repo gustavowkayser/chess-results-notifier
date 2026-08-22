@@ -1,63 +1,29 @@
-import { TournamentDetails } from '../../domain/TournamentDetails.ts';
-import { TournamentProvider } from '../providers/TournamentProvider.ts';
-import { EventRepository } from '../repositories/EventRepository.ts';
-import { Tournament } from '../../domain/Tournament.ts';
+import { TournamentRepository } from '../repositories/TournamentRepository.ts';
+import { TrackedTournament } from '../../domain/TrackedTournament.ts';
 
+/**
+ * What the screens talk to. There is no logic left on this side of the wire —
+ * registering scrapes and appends events on the server now — but the screens
+ * keep depending on this name rather than on Supabase, which is what lets them
+ * be rendered in a test with a plain object.
+ */
 export class TournamentService {
-    constructor(
-        private readonly tournamentProvider: TournamentProvider,
-        private readonly eventRepository: EventRepository,
-    ) {}
+    constructor(private readonly tournaments: TournamentRepository) {}
 
-    async registerTournament(
-        tournamentUrl: string,
-    ): Promise<TournamentDetails> {
-        // The aggregate id is derived from the URL, so the same tournament
-        // reached with different query parameters has to collapse to one
-        // stream rather than registering twice.
-        const canonicalUrl = this.tournamentProvider.canonicalUrl(tournamentUrl);
-
-        const tournamentDetails =
-            await this.tournamentProvider.getTournamentDetails(canonicalUrl);
-
-        const tournament = Tournament.register(
-            canonicalUrl,
-            tournamentDetails.toDomain(),
-        );
-
-        await this.eventRepository.save(tournament);
-
-        return tournament.getDetails();
+    registerTournament(tournamentUrl: string): Promise<void> {
+        return this.tournaments.register(tournamentUrl);
     }
 
     /**
-     * Stops tracking a tournament. The stream is kept — the aggregate records
-     * that it was unregistered — so this is an append, not a delete.
+     * Stops following a tournament. Nothing is deleted: the server appends,
+     * and the tournament itself carries on being refreshed for whoever else
+     * is following it.
      */
-    async unregisterTournament(tournamentUrl: string): Promise<void> {
-        const canonicalUrl = this.tournamentProvider.canonicalUrl(tournamentUrl);
-        const events = await this.eventRepository.load(canonicalUrl);
-
-        if (!events.length) {
-            return;
-        }
-
-        const tournament = Tournament.rehydrate(canonicalUrl, events);
-        tournament.unregister();
-
-        await this.eventRepository.save(tournament);
+    unregisterTournament(tournamentUrl: string): Promise<void> {
+        return this.tournaments.unregister(tournamentUrl);
     }
 
-    /** Only the tournaments still being tracked. */
-    async listTournaments(): Promise<Tournament[]> {
-        const ids = await this.eventRepository.listAggregateIds();
-
-        const tournaments = await Promise.all(
-            ids.map(async id =>
-                Tournament.rehydrate(id, await this.eventRepository.load(id)),
-            ),
-        );
-
-        return tournaments.filter(tournament => !tournament.isUnregistered());
+    listTournaments(): Promise<TrackedTournament[]> {
+        return this.tournaments.list();
     }
 }

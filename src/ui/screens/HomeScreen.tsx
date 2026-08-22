@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     DeviceEventEmitter,
+    Linking,
     ScrollView,
     StyleSheet,
     Text,
@@ -39,21 +40,24 @@ export function HomeScreen({
     const [error, setError] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
-        const tracked = await tournamentService.listTournaments();
+        // The list comes over the network now, so it can fail where reading the
+        // local database could not. Failing quietly would leave the last good
+        // list on screen with no hint that it had stopped being updated.
+        try {
+            const tracked = await tournamentService.listTournaments();
 
-        setTournaments(
-            tracked.map(tournament => {
-                const details = tournament.getDetails();
-
-                return {
-                    id: tournament.id,
-                    name: details.name,
-                    currentRound: details.currentRound,
-                    totalRounds: details.totalRounds,
-                    updatedAt: tournament.getUpdatedAt(),
-                };
-            }),
-        );
+            setTournaments(
+                tracked.map(tournament => ({
+                    id: tournament.url,
+                    name: tournament.name,
+                    currentRound: tournament.currentRound,
+                    totalRounds: tournament.totalRounds,
+                    updatedAt: tournament.updatedAt,
+                })),
+            );
+        } catch (caught) {
+            setError((caught as Error).message);
+        }
     }, []);
 
     useEffect(() => {
@@ -110,6 +114,21 @@ export function HomeScreen({
         }
     };
 
+    // The card id is the canonical chess-results address, so opening it needs
+    // nothing beyond handing it to the browser. openURL rejects when no app
+    // will take the link, which is worth surfacing rather than swallowing.
+    const openTournamentPage = async (id: string) => {
+        setError(null);
+
+        try {
+            await Linking.openURL(id);
+        } catch {
+            setError(
+                'Could not open the chess-results page for this tournament.',
+            );
+        }
+    };
+
     const unregister = async (id: string) => {
         setError(null);
 
@@ -145,7 +164,7 @@ export function HomeScreen({
             {error !== null && <Text style={styles.error}>{error}</Text>}
 
             <Text style={styles.sectionLabel}>
-                TRACKED · {tournaments.length}
+                TOURNAMENTS · {tournaments.length}
             </Text>
 
             <ScrollView
@@ -163,6 +182,7 @@ export function HomeScreen({
                             key={tournament.id}
                             tournament={tournament}
                             onUnregister={unregister}
+                            onOpen={openTournamentPage}
                         />
                     ))
                 )}

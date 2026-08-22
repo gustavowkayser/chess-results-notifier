@@ -1,5 +1,5 @@
 import React from 'react';
-import { DeviceEventEmitter } from 'react-native';
+import { DeviceEventEmitter, Linking } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { HomeScreen } from '../src/ui/screens/HomeScreen.tsx';
 
@@ -25,22 +25,19 @@ jest.mock('../src/monitoring/MonitoringController', () => ({
     },
 }));
 
-jest.mock('react-native-safe-area-context', () =>
-    require('react-native-safe-area-context/jest/mock').default,
+jest.mock(
+    'react-native-safe-area-context',
+    () => require('react-native-safe-area-context/jest/mock').default,
 );
 
-/** A tournament as listTournaments returns it: an aggregate, not a DTO. */
-const aggregate = (
-    id: string,
+/** A tournament as listTournaments returns it: a row, not an aggregate. */
+const tracked = (
+    url: string,
     name: string,
     currentRound: number,
     totalRounds: number,
     updatedAt: Date | null = new Date(),
-) => ({
-    id,
-    getDetails: () => ({ name, currentRound, totalRounds }),
-    getUpdatedAt: () => updatedAt,
-});
+) => ({ url, name, currentRound, totalRounds, updatedAt });
 
 beforeEach(() => {
     jest.useFakeTimers();
@@ -81,7 +78,9 @@ const render = async () => {
         navigate,
         openSearch: () =>
             act(() =>
-                tree.root.findByProps({ testID: 'open-search' }).props.onPress(),
+                tree.root
+                    .findByProps({ testID: 'open-search' })
+                    .props.onPress(),
             ),
         focus: () => act(() => focusListeners.forEach(listener => listener())),
         toggle: (next: boolean) =>
@@ -93,6 +92,10 @@ const render = async () => {
         switchIsOn: () =>
             tree.root.findByProps({ accessibilityRole: 'switch' }).props
                 .accessibilityState.checked,
+        open: (id: string) =>
+            act(() =>
+                tree.root.findByProps({ testID: `open-${id}` }).props.onPress(),
+            ),
         remove: (id: string) =>
             act(() =>
                 tree.root
@@ -116,7 +119,7 @@ describe('tournament list', () => {
 
     test('renders a card per tournament with its round', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate(
+            tracked(
                 'https://s1.chess-results.com/tnr1.aspx',
                 'Goiano Blitz',
                 5,
@@ -132,7 +135,7 @@ describe('tournament list', () => {
 
     test('shows how long ago the tournament last changed', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate(
+            tracked(
                 'https://s1.chess-results.com/tnr1.aspx',
                 'Goiano Blitz',
                 5,
@@ -146,11 +149,11 @@ describe('tournament list', () => {
         expect(text()).toContain('2h ago');
     });
 
-    // A stream with no events cannot claim a time, and a "·" dangling off the
-    // round reads as a rendering bug.
-    test('omits the timestamp when the aggregate has none', async () => {
+    // A tournament that has never changed cannot claim a time, and a "·"
+    // dangling off the round reads as a rendering bug.
+    test('omits the timestamp when there is none', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate(
+            tracked(
                 'https://s1.chess-results.com/tnr1.aspx',
                 'Goiano Blitz',
                 5,
@@ -167,7 +170,7 @@ describe('tournament list', () => {
 
     test('reads round zero as no pairings rather than "0 of 7"', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate(
+            tracked(
                 'https://s1.chess-results.com/tnr1.aspx',
                 'Not started',
                 0,
@@ -181,11 +184,12 @@ describe('tournament list', () => {
         expect(text()).not.toContain('Round 0');
     });
 
-    // Events written before totalRounds existed replay as 0. Seen on a real
-    // device as "Round 5 of 0".
+    // total_rounds defaults to 0 in the projection, and a page the parser could
+    // not read a total from leaves it there. Seen on a real device as
+    // "Round 5 of 0".
     test('omits the total when it is unknown rather than showing zero', async () => {
         mockListTournaments.mockResolvedValue([
-            aggregate('https://s1.chess-results.com/tnr1.aspx', 'Legacy', 5, 0),
+            tracked('https://s1.chess-results.com/tnr1.aspx', 'Legacy', 5, 0),
         ]);
 
         const { text } = await render();
@@ -194,10 +198,46 @@ describe('tournament list', () => {
         expect(text()).not.toContain('of 0');
     });
 
+    // The card summarises a page the user will want to read in full: the
+    // pairings, the standings, everything the round number stands in for.
+    test('opens the chess-results page when the name is tapped', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        const openURL = jest
+            .spyOn(Linking, 'openURL')
+            .mockResolvedValue(true as never);
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const { open } = await render();
+        await open(id);
+
+        expect(openURL).toHaveBeenCalledWith(id);
+
+        openURL.mockRestore();
+    });
+
+    test('reports a link the device cannot open', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        const openURL = jest
+            .spyOn(Linking, 'openURL')
+            .mockRejectedValue(new Error('no activity found'));
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const { open, text } = await render();
+        await open(id);
+
+        expect(text()).toContain('Could not open the chess-results page');
+
+        openURL.mockRestore();
+    });
+
     test('unregisters and refreshes', async () => {
         const id = 'https://s1.chess-results.com/tnr1.aspx';
         mockListTournaments.mockResolvedValue([
-            aggregate(id, 'Goiano Blitz', 5, 7),
+            tracked(id, 'Goiano Blitz', 5, 7),
         ]);
 
         const { remove } = await render();

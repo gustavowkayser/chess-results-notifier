@@ -1,25 +1,20 @@
 import { AndroidNotifier } from './infrastructure/AndroidNotifier.ts';
-import { ChessResultsProvider } from './infrastructure/ChessResultsProvider.ts';
-import { ChessResultsUrl } from './infrastructure/chessresults/ChessResultsUrl.ts';
 import { MonitoringService } from './application/services/MonitoringService.ts';
-import { OpSqliteDatabase } from './infrastructure/sqlite/OpSqliteDatabase.ts';
-import { SqliteEventRepository } from './infrastructure/SqliteEventRepository.ts';
+import { SupabaseTournamentRepository } from './infrastructure/supabase/SupabaseTournamentRepository.ts';
 import { TournamentService } from './application/services/TournamentService.ts';
 
-const tournamentProvider = new ChessResultsProvider();
-const eventRepository = new SqliteEventRepository(new OpSqliteDatabase());
+// Reached across into the backend on purpose: what counts as a tournament URL
+// has to be one definition, and the Edge Functions cannot import out of src/.
+// ChessResultsUrl pulls in no HTML parsing, so the app bundle stays as small as
+// it was.
+import { ChessResultsUrl } from '../../supabase/functions/_shared/chessresults/ChessResultsUrl.ts';
+
+const tournamentRepository = new SupabaseTournamentRepository();
 const notifier = new AndroidNotifier();
 
-const tournamentService = new TournamentService(
-    tournamentProvider,
-    eventRepository,
-);
+const tournamentService = new TournamentService(tournamentRepository);
 
-const monitoringService = new MonitoringService(
-    tournamentProvider,
-    eventRepository,
-    notifier,
-);
+const monitoringService = new MonitoringService(tournamentRepository, notifier);
 
 /**
  * Whether text names a chess-results tournament. Exported so the search screen

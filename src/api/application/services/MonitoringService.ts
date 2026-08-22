@@ -1,60 +1,54 @@
+import { Notification } from '../../domain/Notification.ts';
 import { Notifier } from '../notifiers/Notifier.ts';
-import { Tournament } from '../../domain/Tournament.ts';
-import { TournamentProvider } from '../providers/TournamentProvider.ts';
-import { EventRepository } from '../repositories/EventRepository.ts';
+import { PublishedRound } from '../../domain/PublishedRound.ts';
+import { TournamentRepository } from '../repositories/TournamentRepository.ts';
 
+/**
+ * One tick of the monitoring service.
+ *
+ * The device no longer decides whether a round has moved on — the scheduled
+ * refresh does that once for everyone. What is left here is delivery: ask for
+ * the rounds this user has not seen, and put them on screen.
+ */
 export class MonitoringService {
     constructor(
-        private readonly tournamentProvider: TournamentProvider,
-        private readonly eventRepository: EventRepository,
+        private readonly tournaments: TournamentRepository,
         private readonly notifier: Notifier,
     ) {}
 
-    /**
-     * Checks every registered tournament and notifies about the ones whose
-     * round moved on. Returns how many notifications were sent.
-     */
-    async checkAll(): Promise<number> {
-        const ids = await this.eventRepository.listAggregateIds();
+    /** Returns how many notifications were shown. */
+    async deliverPending(): Promise<number> {
+        // Claiming before showing is deliberate. Two ticks can overlap — the
+        // foreground service and a cold headless task — and announcing a round
+        // twice is worse than the rare case of losing one to a failed native
+        // call, which the warning below at least records.
+        const rounds = await this.tournaments.claimPendingRounds();
 
-        // One unreachable tournament must not abort the tick, so each check
-        // settles on its own and a failure counts as "nothing to notify".
-        const notified = await Promise.all(
-            ids.map(id =>
-                this.check(id).catch(error => {
-                    console.warn(`Failed to check tournament ${id}`, error);
+        const shown = await Promise.all(
+            rounds.map(round =>
+                this.notifier
+                    .notify(notificationFor(round))
+                    .then(() => true)
+                    .catch(error => {
+                        console.warn(
+                            `Failed to notify about ${round.tournamentUrl}`,
+                            error,
+                        );
 
-                    return false;
-                }),
+                        return false;
+                    }),
             ),
         );
 
-        return notified.filter(Boolean).length;
-    }
-
-    private async check(aggregateId: string): Promise<boolean> {
-        const events = await this.eventRepository.load(aggregateId);
-
-        if (!events.length) return false;
-
-        const tournament = Tournament.rehydrate(aggregateId, events);
-
-        // The stream outlives unregistering, so a removed tournament is still
-        // listed here. Skipping it before the fetch is what actually stops the
-        // polling.
-        if (tournament.isUnregistered()) return false;
-
-        const details = await this.tournamentProvider.getTournamentDetails(
-            tournament.getUrl(),
-        );
-
-        const notification = tournament.observe(details.toDomain());
-
-        if (!notification) return false;
-
-        await this.eventRepository.save(tournament);
-        await this.notifier.notify(notification);
-
-        return true;
+        return shown.filter(Boolean).length;
     }
 }
+
+const notificationFor = (round: PublishedRound): Notification =>
+    new Notification(
+        round.name,
+        `Round ${round.currentRound} of ${round.totalRounds} pairings are out`,
+        // The URL as tag: a later round replaces the previous notification for
+        // the same tournament rather than stacking up.
+        round.tournamentUrl,
+    );

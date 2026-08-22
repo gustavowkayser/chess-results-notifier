@@ -2,13 +2,11 @@
  * @format
  */
 
-import { StubTournamentProvider } from '../test-support/StubTournamentProvider';
 import { MonitoringService } from '../src/api/application/services/MonitoringService';
-import { NodeSqliteDatabase } from '../test-support/NodeSqliteDatabase';
 import { Notification } from '../src/api/domain/Notification';
 import { Notifier } from '../src/api/application/notifiers/Notifier';
-import { SqliteEventRepository } from '../src/api/infrastructure/SqliteEventRepository';
-import { TournamentService } from '../src/api/application/services/TournamentService';
+import { PublishedRound } from '../src/api/domain/PublishedRound';
+import { TournamentRepository } from '../src/api/application/repositories/TournamentRepository';
 
 const SAMPLE_URL = 'https://s1.chess-results.com/tnr1234567.aspx';
 const OTHER_URL = 'https://s2.chess-results.com/tnr7654321.aspx';
@@ -21,195 +19,124 @@ class RecordingNotifier implements Notifier {
     }
 }
 
-// Every in-memory database is a separate store, so the database is passed in
-// explicitly: two services sharing one are sharing it on purpose.
-const build = (database: NodeSqliteDatabase) => {
-    const provider = new StubTournamentProvider();
-    const repository = new SqliteEventRepository(database);
+/**
+ * The backend, as far as a tick is concerned: a queue of rounds that empties
+ * when it is claimed. Everything else on TournamentRepository belongs to the
+ * screens, not to monitoring.
+ */
+class StubRepository implements TournamentRepository {
+    public claims = 0;
+
+    constructor(private pending: PublishedRound[] = []) {}
+
+    async claimPendingRounds(): Promise<PublishedRound[]> {
+        this.claims++;
+
+        const claimed = this.pending;
+        this.pending = [];
+
+        return claimed;
+    }
+
+    async list(): Promise<never[]> {
+        throw new Error('not used by monitoring');
+    }
+
+    async register(): Promise<void> {
+        throw new Error('not used by monitoring');
+    }
+
+    async unregister(): Promise<void> {
+        throw new Error('not used by monitoring');
+    }
+}
+
+const round = (tournamentUrl: string, currentRound: number): PublishedRound => ({
+    tournamentUrl,
+    name: 'Campeonato Goiano Blitz',
+    currentRound,
+    totalRounds: 9,
+});
+
+test('a tick shows one notification per claimed round', async () => {
     const notifier = new RecordingNotifier();
+    const repository = new StubRepository([round(SAMPLE_URL, 2)]);
 
-    return {
-        notifier,
-        provider,
-        repository,
-        tournamentService: new TournamentService(provider, repository),
-        monitoringService: new MonitoringService(
-            provider,
-            repository,
-            notifier,
-        ),
-    };
-};
+    await expect(
+        new MonitoringService(repository, notifier).deliverPending(),
+    ).resolves.toBe(1);
 
-let database: NodeSqliteDatabase;
-
-beforeEach(() => {
-    database = new NodeSqliteDatabase();
-});
-
-afterEach(() => {
-    database.close();
-});
-
-test('registering a tournament persists a replayable stream', async () => {
-    const { tournamentService, repository } = build(database);
-
-    const details = await tournamentService.registerTournament(SAMPLE_URL);
-
-    expect(details.name).toBe('Mock Tournament Name');
-    expect(await repository.listAggregateIds()).toEqual([SAMPLE_URL]);
-
-    const events = await repository.load(SAMPLE_URL);
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('TournamentRegistered');
-});
-
-test('a tick notifies once when the round moves on', async () => {
-    const { tournamentService, monitoringService, notifier } = build(database);
-
-    await tournamentService.registerTournament(SAMPLE_URL);
-
-    // The stub provider advances the round on every poll, so this tick sees a
-    // new round and the next one, given a fresh provider, does not.
-    expect(await monitoringService.checkAll()).toBe(1);
     expect(notifier.sent).toHaveLength(1);
+    expect(notifier.sent[0].title).toBe('Campeonato Goiano Blitz');
     expect(notifier.sent[0].body).toBe('Round 2 of 9 pairings are out');
+    // The URL as tag, so a later round replaces the previous notification for
+    // the same tournament rather than stacking up.
     expect(notifier.sent[0].tag).toBe(SAMPLE_URL);
 });
 
-test('a tick with no new round produces no event and no notification', async () => {
-    const { tournamentService, repository } = build(database);
+// Claiming is what marks the rounds seen, so the second tick finds nothing.
+// This is the property that stops the same round being announced twice.
+test('a round is announced once, however often the tick runs', async () => {
+    const notifier = new RecordingNotifier();
+    const repository = new StubRepository([round(SAMPLE_URL, 2)]);
+    const monitoring = new MonitoringService(repository, notifier);
 
-    await tournamentService.registerTournament(SAMPLE_URL);
+    await monitoring.deliverPending();
 
-    // A second service sharing the store but with its own provider, which
-    // restarts at round 1 — i.e. the round has not moved on.
-    const stale = build(database);
-    const before = (await repository.load(SAMPLE_URL)).length;
-
-    expect(await stale.monitoringService.checkAll()).toBe(0);
-    expect(stale.notifier.sent).toHaveLength(0);
-    expect(await repository.load(SAMPLE_URL)).toHaveLength(before);
+    await expect(monitoring.deliverPending()).resolves.toBe(0);
+    expect(notifier.sent).toHaveLength(1);
+    expect(repository.claims).toBe(2);
 });
 
-test('saving twice does not append the same events again', async () => {
-    const { tournamentService, repository } = build(database);
+test('a quiet tick asks once and shows nothing', async () => {
+    const notifier = new RecordingNotifier();
+    const repository = new StubRepository();
 
-    await tournamentService.registerTournament(SAMPLE_URL);
+    await expect(
+        new MonitoringService(repository, notifier).deliverPending(),
+    ).resolves.toBe(0);
 
-    const tournament = (await tournamentService.listTournaments())[0];
-    await repository.save(tournament);
-
-    expect(await repository.load(SAMPLE_URL)).toHaveLength(1);
+    expect(notifier.sent).toHaveLength(0);
+    expect(repository.claims).toBe(1);
 });
 
-test('streams replay in order and aggregates list in registration order', async () => {
-    const { tournamentService, monitoringService, repository } =
-        build(database);
+test('one notification that cannot be shown does not sink the rest', async () => {
+    const shown: string[] = [];
 
-    await tournamentService.registerTournament(SAMPLE_URL);
-    await tournamentService.registerTournament(OTHER_URL);
+    const notifier: Notifier = {
+        notify: async notification => {
+            if (notification.tag === SAMPLE_URL) {
+                throw new Error('notifications are blocked');
+            }
 
-    // Two ticks, so each stream holds a registration followed by more than one
-    // round — enough for append order to be observable.
-    await monitoringService.checkAll();
-    await monitoringService.checkAll();
-
-    expect(await repository.listAggregateIds()).toEqual([
-        SAMPLE_URL,
-        OTHER_URL,
-    ]);
-
-    // Both streams are asserted: checkAll saves concurrently, and a failed
-    // write on the second aggregate would otherwise go unnoticed here.
-    for (const url of [SAMPLE_URL, OTHER_URL]) {
-        const events = await repository.load(url);
-
-        expect(events.map(event => event.type)).toEqual([
-            'TournamentRegistered',
-            'RoundPublished',
-            'RoundPublished',
-        ]);
-        expect(events.map(event => event.payload().round)).toEqual([
-            undefined,
-            2,
-            3,
-        ]);
-        expect(events.every(event => event.aggregateId === url)).toBe(true);
-    }
-});
-
-test('an unregistered tournament disappears and stops being polled', async () => {
-    const { tournamentService, monitoringService, repository, provider } =
-        build(database);
-
-    await tournamentService.registerTournament(SAMPLE_URL);
-    await tournamentService.registerTournament(OTHER_URL);
-
-    await tournamentService.unregisterTournament(SAMPLE_URL);
-
-    const listed = await tournamentService.listTournaments();
-    expect(listed.map(tournament => tournament.id)).toEqual([OTHER_URL]);
-
-    // The stream is kept: unregistering appends rather than deleting.
-    expect((await repository.load(SAMPLE_URL)).map(e => e.type)).toEqual([
-        'TournamentRegistered',
-        'TournamentUnregistered',
-    ]);
-
-    provider.fetched.length = 0;
-    await monitoringService.checkAll();
-
-    expect(provider.fetched).toEqual([OTHER_URL]);
-});
-
-test('unregistering twice appends a single event', async () => {
-    const { tournamentService, repository } = build(database);
-
-    await tournamentService.registerTournament(SAMPLE_URL);
-    await tournamentService.unregisterTournament(SAMPLE_URL);
-    await tournamentService.unregisterTournament(SAMPLE_URL);
-
-    expect(await repository.load(SAMPLE_URL)).toHaveLength(2);
-});
-
-test('registering again revives an unregistered tournament', async () => {
-    const { tournamentService, repository } = build(database);
-
-    await tournamentService.registerTournament(SAMPLE_URL);
-    await tournamentService.unregisterTournament(SAMPLE_URL);
-    await tournamentService.registerTournament(SAMPLE_URL);
-
-    const listed = await tournamentService.listTournaments();
-    expect(listed.map(tournament => tournament.id)).toEqual([SAMPLE_URL]);
-
-    // One stream throughout, so the history of having been removed survives.
-    expect((await repository.load(SAMPLE_URL)).map(e => e.type)).toEqual([
-        'TournamentRegistered',
-        'TournamentUnregistered',
-        'TournamentRegistered',
-    ]);
-});
-
-test('an unreachable tournament does not abort the tick', async () => {
-    const { tournamentService, repository, notifier } = build(database);
-
-    await tournamentService.registerTournament(SAMPLE_URL);
-
-    const failing = {
-        canonicalUrl: (url: string) => url,
-        getTournamentDetails: jest.fn(async () => {
-            throw new Error('network down');
-        }),
+            shown.push(notification.tag);
+        },
     };
 
-    const service = new MonitoringService(failing, repository, notifier);
+    const repository = new StubRepository([
+        round(SAMPLE_URL, 2),
+        round(OTHER_URL, 5),
+    ]);
 
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await expect(service.checkAll()).resolves.toBe(0);
+    await expect(
+        new MonitoringService(repository, notifier).deliverPending(),
+    ).resolves.toBe(1);
 
+    expect(shown).toEqual([OTHER_URL]);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
-    expect(failing.getTournamentDetails).toHaveBeenCalled();
+});
+
+test('a backend that cannot be reached fails the tick loudly', async () => {
+    const repository = new StubRepository();
+
+    repository.claimPendingRounds = async () => {
+        throw new Error('Could not check for new rounds: offline');
+    };
+
+    await expect(
+        new MonitoringService(repository, new RecordingNotifier()).deliverPending(),
+    ).rejects.toThrow(/offline/);
 });

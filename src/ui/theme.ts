@@ -1,6 +1,6 @@
 export const theme = {
-    background: '#12141a',
-    card: '#1c1f27',
+    background: '#000000',
+    card: '#26292f',
     // One step above card, for controls that should read as interactive.
     surface: '#232733',
     border: '#2b303b',

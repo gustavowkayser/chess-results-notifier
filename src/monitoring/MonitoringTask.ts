@@ -13,7 +13,7 @@ export interface MonitoringTaskData {
 export async function MonitoringTask(data: MonitoringTaskData): Promise<void> {
     console.log('MonitoringTask: tick', data.tickedAt);
 
-    const notified = await monitoringService.checkAll();
+    const notified = await monitoringService.deliverPending();
 
     console.log(`MonitoringTask: sent ${notified} notification(s)`);
 }
