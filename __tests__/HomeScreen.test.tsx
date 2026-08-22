@@ -2,6 +2,7 @@ import React from 'react';
 import { DeviceEventEmitter, Linking } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { HomeScreen } from '../src/ui/screens/HomeScreen.tsx';
+import { ToastProvider } from '../src/ui/Toast.tsx';
 
 const mockUnregisterTournament = jest.fn();
 const mockListTournaments = jest.fn();
@@ -41,8 +42,12 @@ const tracked = (
 
 beforeEach(() => {
     jest.useFakeTimers();
+    // clearAllMocks forgets the calls but keeps the implementations, so every
+    // mock a test rewires needs its default restored here or the next test
+    // inherits it.
     jest.clearAllMocks();
     mockListTournaments.mockResolvedValue([]);
+    mockUnregisterTournament.mockResolvedValue(undefined);
     mockIsMonitoring.mockResolvedValue(false);
     mockStart.mockResolvedValue(true);
 });
@@ -65,7 +70,12 @@ const render = async () => {
 
     await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(
-            <HomeScreen navigation={{ navigate, addListener } as never} />,
+            // The real app mounts the provider above the navigator, and the
+            // screen announces through it, so the toast is part of what these
+            // tests are rendering.
+            <ToastProvider>
+                <HomeScreen navigation={{ navigate, addListener } as never} />
+            </ToastProvider>,
         );
     });
 
@@ -96,12 +106,28 @@ const render = async () => {
             act(() =>
                 tree.root.findByProps({ testID: `open-${id}` }).props.onPress(),
             ),
+        openButton: (id: string) =>
+            act(() =>
+                tree.root
+                    .findByProps({ testID: `open-button-${id}` })
+                    .props.onPress(),
+            ),
+        ring: () =>
+            tree.root.findByProps({ accessibilityRole: 'progressbar' }).props
+                .accessibilityLabel,
         remove: (id: string) =>
             act(() =>
                 tree.root
                     .findByProps({ testID: `unregister-${id}` })
                     .props.onPress(),
             ),
+        toast: () => {
+            const found = tree.root.findAllByProps({ testID: 'toast' });
+
+            return found.length > 0
+                ? String(found[0].props.accessibilityLabel)
+                : null;
+        },
         text: () =>
             tree.root
                 .findAll(node => typeof node.props.children === 'string')
@@ -110,11 +136,26 @@ const render = async () => {
     };
 };
 
+/** A promise the test decides when to settle, standing in for a slow delete. */
+const deferred = () => {
+    let settle!: (error?: Error) => void;
+
+    const promise = new Promise<void>((resolve, reject) => {
+        settle = error => (error ? reject(error) : resolve());
+    });
+
+    // The rejection path is only taken when a test asks for it; without this
+    // the pending promise counts as unhandled the moment it is created.
+    promise.catch(() => {});
+
+    return { promise, settle };
+};
+
 describe('tournament list', () => {
     test('shows an empty state when nothing is tracked', async () => {
         const { text } = await render();
 
-        expect(text()).toContain('No tournaments yet');
+        expect(text()).toContain('Nothing tracked yet');
     });
 
     test('renders a card per tournament with its round', async () => {
@@ -234,7 +275,43 @@ describe('tournament list', () => {
         openURL.mockRestore();
     });
 
-    test('unregisters and refreshes', async () => {
+    // The title and the lime button are one action with two affordances; a
+    // regression in either leaves the card looking tappable where it is not.
+    test('opens the page from the call-to-action button as well', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        const openURL = jest
+            .spyOn(Linking, 'openURL')
+            .mockResolvedValue(true as never);
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const { openButton } = await render();
+        await openButton(id);
+
+        expect(openURL).toHaveBeenCalledWith(id);
+
+        openURL.mockRestore();
+    });
+
+    // The ring is the only place the round appears as a shape rather than as
+    // words, so it has to carry the same reading for a screen reader.
+    test('labels the progress ring with the round it draws', async () => {
+        mockListTournaments.mockResolvedValue([
+            tracked(
+                'https://s1.chess-results.com/tnr1.aspx',
+                'Goiano Blitz',
+                5,
+                7,
+            ),
+        ]);
+
+        const { ring } = await render();
+
+        expect(ring()).toBe('Round 5 of 7');
+    });
+
+    test('unregisters the tournament when the card is removed', async () => {
         const id = 'https://s1.chess-results.com/tnr1.aspx';
         mockListTournaments.mockResolvedValue([
             tracked(id, 'Goiano Blitz', 5, 7),
@@ -246,7 +323,73 @@ describe('tournament list', () => {
         await remove(id);
 
         expect(mockUnregisterTournament).toHaveBeenCalledWith(id);
-        expect(mockListTournaments).toHaveBeenCalledTimes(2);
+    });
+
+    // The delete is a round trip to the server. Leaving the card up for its
+    // duration read as a tap that had missed the button.
+    test('takes the card off screen before the delete comes back', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const slow = deferred();
+        mockUnregisterTournament.mockReturnValue(slow.promise);
+
+        const { remove, text } = await render();
+        await remove(id);
+
+        expect(text()).not.toContain('Goiano Blitz');
+        expect(text()).toContain('Nothing tracked yet');
+    });
+
+    // The card is gone locally but still on the server until the delete lands,
+    // so a tick in that window would otherwise put it straight back.
+    test('keeps a removed card off screen when a refresh lands first', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const slow = deferred();
+        mockUnregisterTournament.mockReturnValue(slow.promise);
+
+        const { remove, text } = await render();
+        await remove(id);
+
+        await ReactTestRenderer.act(async () => {
+            DeviceEventEmitter.emit('onMonitoringTick');
+        });
+
+        expect(text()).not.toContain('Goiano Blitz');
+    });
+
+    test('confirms the removal once it has gone through', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+
+        const { remove, toast } = await render();
+        await remove(id);
+
+        expect(toast()).toBe('Tournament removed');
+    });
+
+    // Optimism has to be paid for: a delete that fails leaves the tournament
+    // tracked, and a card that stays gone is a lie about what the app is doing.
+    test('puts the card back and says so when the delete fails', async () => {
+        const id = 'https://s1.chess-results.com/tnr1.aspx';
+        mockListTournaments.mockResolvedValue([
+            tracked(id, 'Goiano Blitz', 5, 7),
+        ]);
+        mockUnregisterTournament.mockRejectedValue(new Error('network down'));
+
+        const { remove, text, toast } = await render();
+        await remove(id);
+
+        expect(text()).toContain('Goiano Blitz');
+        expect(toast()).toBe('Could not remove tournament');
     });
 
     // Registration happens on the other screen, so returning to this one is

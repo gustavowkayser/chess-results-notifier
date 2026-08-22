@@ -2,6 +2,7 @@ import React from 'react';
 import { TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { SearchScreen } from '../src/ui/screens/SearchScreen.tsx';
+import { ToastProvider } from '../src/ui/Toast.tsx';
 
 const mockRegisterTournament = jest.fn();
 
@@ -23,13 +24,30 @@ jest.mock('react-native-safe-area-context', () =>
 
 const URL = 'https://s1.chess-results.com/tnr1477210.aspx';
 
+let rendered: ReactTestRenderer.ReactTestRenderer | null = null;
+
+// A toast schedules its own dismissal, and a tree left mounted keeps that timer
+// running into the next test — or past the end of the run, where it reaches for
+// an environment Jest has already torn down.
+afterEach(() => {
+    ReactTestRenderer.act(() => {
+        rendered?.unmount();
+    });
+
+    rendered = null;
+});
+
 const render = async () => {
     const goBack = jest.fn();
     let tree!: ReactTestRenderer.ReactTestRenderer;
 
     await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(
-            <SearchScreen navigation={{ goBack }} />,
+        tree = rendered = ReactTestRenderer.create(
+            // The confirmation this screen raises is shown by the provider the
+            // app mounts above the navigator, so it is rendered here too.
+            <ToastProvider>
+                <SearchScreen navigation={{ goBack }} />
+            </ToastProvider>,
         );
     });
 
@@ -61,6 +79,13 @@ const render = async () => {
         hasResult: () =>
             tree.root.findAllByProps({ testID: 'register-tournament' }).length >
             0,
+        toast: () => {
+            const found = tree.root.findAllByProps({ testID: 'toast' });
+
+            return found.length > 0
+                ? String(found[0].props.accessibilityLabel)
+                : null;
+        },
         text: () =>
             tree.root
                 .findAll(node => typeof node.props.children === 'string')
@@ -98,6 +123,28 @@ describe('search screen', () => {
 
         expect(mockRegisterTournament).toHaveBeenCalledWith(URL);
         expect(goBack).toHaveBeenCalled();
+    });
+
+    // The screen it confirms on is the one being left, so the message has to
+    // be raised before goBack and outlive it.
+    test('confirms the tournament was added', async () => {
+        const { type, submit, toast } = await render();
+
+        await type(URL);
+        await submit();
+
+        expect(toast()).toBe('Tournament added');
+    });
+
+    test('says nothing when the tournament could not be added', async () => {
+        mockRegisterTournament.mockRejectedValue(new Error('network down'));
+
+        const { type, submit, toast } = await render();
+
+        await type(URL);
+        await submit();
+
+        expect(toast()).toBeNull();
     });
 
     test('shows a rejected URL and stays put', async () => {

@@ -13,8 +13,11 @@ jest.mock('lucide-react-native', () => {
 
     return {
         ArrowLeft: icon('ArrowLeft'),
+        ArrowUpRight: icon('ArrowUpRight'),
         Bell: icon('Bell'),
+        Crown: icon('Crown'),
         Link: icon('Link'),
+        Plus: icon('Plus'),
         Search: icon('Search'),
         Trash2: icon('Trash2'),
         X: icon('X'),

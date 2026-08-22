@@ -8,8 +8,9 @@ import {
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Search, X } from 'lucide-react-native';
+import { ArrowLeft, ArrowUpRight, Link, Search, X } from 'lucide-react-native';
 import { isTournamentUrl, tournamentService } from '../../api';
+import { useToast } from '../Toast.tsx';
 import { theme } from '../theme.ts';
 
 const PLACEHOLDER = 'Paste a chess-results link…';
@@ -28,6 +29,7 @@ export function SearchScreen({
     navigation: SearchScreenNavigation;
 }) {
     const safeAreaInsets = useSafeAreaInsets();
+    const showToast = useToast();
 
     const [query, setQuery] = useState('');
     const [busy, setBusy] = useState(false);
@@ -48,6 +50,10 @@ export function SearchScreen({
 
         try {
             await tournamentService.registerTournament(trimmed);
+
+            // The confirmation has to outlive this screen: by the time it is
+            // read the user is back on the list, looking for the card.
+            showToast('Tournament added');
             navigation.goBack();
         } catch (caught) {
             setError((caught as Error).message);
@@ -58,53 +64,51 @@ export function SearchScreen({
 
     return (
         <View
-            style={[
-                styles.container,
-                { paddingTop: safeAreaInsets.top + 12 },
-            ]}
+            style={[styles.container, { paddingTop: safeAreaInsets.top + 12 }]}
         >
-            <View style={styles.header}>
-                <Pressable
-                    style={styles.back}
-                    onPress={navigation.goBack}
-                    testID="search-back"
-                    accessibilityRole="button"
-                    accessibilityLabel="Go back"
-                    hitSlop={8}
-                >
-                    <ArrowLeft size={20} color={theme.text} />
-                </Pressable>
+            <Pressable
+                style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+                onPress={navigation.goBack}
+                testID="search-back"
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+                hitSlop={8}
+            >
+                <ArrowLeft size={19} color={theme.text} />
+            </Pressable>
 
-                <View style={styles.field}>
-                    <Search size={18} color={theme.muted} />
-                    <TextInput
-                        style={styles.input}
-                        value={query}
-                        onChangeText={setQuery}
-                        placeholder={PLACEHOLDER}
-                        placeholderTextColor={theme.muted}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        autoFocus
-                        editable={!busy}
-                        returnKeyType="go"
-                        onSubmitEditing={register}
-                    />
-                    {trimmed.length > 0 && (
-                        <Pressable
-                            onPress={() => {
-                                setQuery('');
-                                setError(null);
-                            }}
-                            testID="search-clear"
-                            accessibilityRole="button"
-                            accessibilityLabel="Clear"
-                            hitSlop={8}
-                        >
-                            <X size={16} color={theme.muted} />
-                        </Pressable>
-                    )}
-                </View>
+            <Text style={styles.display}>Add a tournament to track</Text>
+
+            <View style={styles.field}>
+                <Search size={17} color={theme.muted} />
+                <TextInput
+                    style={styles.input}
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder={PLACEHOLDER}
+                    placeholderTextColor={theme.faint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoFocus
+                    editable={!busy}
+                    returnKeyType="go"
+                    onSubmitEditing={register}
+                />
+                {trimmed.length > 0 && (
+                    <Pressable
+                        style={styles.clear}
+                        onPress={() => {
+                            setQuery('');
+                            setError(null);
+                        }}
+                        testID="search-clear"
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear"
+                        hitSlop={8}
+                    >
+                        <X size={14} color={theme.muted} />
+                    </Pressable>
+                )}
             </View>
 
             <View style={styles.results}>
@@ -143,21 +147,38 @@ function Results({
     }
 
     if (error !== null) {
-        return <Text style={styles.error}>{error}</Text>;
+        return (
+            <View style={styles.errorBox}>
+                <Text style={styles.error}>{error}</Text>
+            </View>
+        );
     }
 
     if (isUrl) {
         return (
             <Pressable
-                style={styles.result}
+                style={({ pressed }) => [
+                    styles.result,
+                    pressed && styles.pressed,
+                ]}
                 onPress={onRegister}
                 testID="register-tournament"
                 accessibilityRole="button"
             >
-                <Text style={styles.resultTitle}>Track this tournament</Text>
-                <Text style={styles.resultSubtitle} numberOfLines={1}>
-                    {query}
-                </Text>
+                <View style={styles.resultIcon}>
+                    <Link size={17} color={theme.accent} />
+                </View>
+
+                <View style={styles.resultText}>
+                    <Text style={styles.resultTitle}>Track this tournament</Text>
+                    <Text style={styles.resultSubtitle} numberOfLines={1}>
+                        {query}
+                    </Text>
+                </View>
+
+                <View style={styles.resultCta}>
+                    <ArrowUpRight size={19} color={theme.onAccent} />
+                </View>
             </Pressable>
         );
     }
@@ -166,10 +187,12 @@ function Results({
     // name typed into it is the user reaching for it early.
     if (query.length > 0) {
         return (
-            <Text style={styles.hint}>
-                Player search is coming soon. For now, paste a chess-results
-                tournament link.
-            </Text>
+            <View style={styles.note}>
+                <Text style={styles.hint}>
+                    Player search is coming soon. For now, paste a chess-results
+                    tournament link.
+                </Text>
+            </View>
         );
     }
 
@@ -177,7 +200,7 @@ function Results({
     // newline turns the element's children into an array, and the test helper
     // that scrapes rendered copy only sees string children.
     return (
-        <View style={styles.idle}>
+        <View style={styles.note}>
             <Text style={styles.hint}>
                 Paste a chess-results tournament link to start tracking it.
             </Text>
@@ -191,37 +214,45 @@ function Results({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        paddingHorizontal: 16,
+        paddingHorizontal: 20,
         backgroundColor: theme.background,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
     back: {
-        width: 40,
-        height: 40,
+        width: 38,
+        height: 38,
         alignItems: 'center',
         justifyContent: 'center',
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
+    },
+    display: {
+        ...theme.type.display,
+        color: theme.text,
+        marginTop: 24,
+        marginBottom: 24,
+        maxWidth: 280,
     },
     field: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
-        backgroundColor: 'rgb(0,0,0,0)',
-        borderColor: theme.border,
-        borderWidth: 1,
-        borderRadius: 99,
-        paddingHorizontal: 14,
-        paddingVertical: 4,
+        gap: 12,
+        backgroundColor: theme.card,
+        borderRadius: theme.radius.pill,
+        paddingHorizontal: 18,
     },
     input: {
+        ...theme.type.body,
         flex: 1,
         color: theme.text,
-        fontSize: 15,
-        paddingVertical: 10,
+        paddingVertical: 16,
+    },
+    clear: {
+        width: 24,
+        height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
     },
     results: {
         flex: 1,
@@ -230,40 +261,72 @@ const styles = StyleSheet.create({
     pending: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        gap: 12,
+        paddingHorizontal: 4,
     },
     result: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
         backgroundColor: theme.card,
-        borderColor: theme.border,
-        borderWidth: 1,
-        borderRadius: 12,
-        padding: 14,
+        borderRadius: theme.radius.card,
+        padding: 16,
+    },
+    resultIcon: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.surface,
+    },
+    resultText: {
+        flex: 1,
     },
     resultTitle: {
+        ...theme.type.title,
+        fontSize: 16,
         color: theme.text,
-        fontSize: 15,
-        fontWeight: '600',
     },
     resultSubtitle: {
-        color: theme.muted,
-        fontSize: 13,
-        marginTop: 4,
+        ...theme.type.meta,
+        fontSize: 12,
+        color: theme.faint,
+        marginTop: 3,
     },
-    idle: {
-        gap: 8,
+    resultCta: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: theme.radius.pill,
+        backgroundColor: theme.accent,
+    },
+    note: {
+        gap: 10,
+        paddingHorizontal: 4,
     },
     hint: {
+        ...theme.type.body,
         color: theme.muted,
-        fontSize: 14,
-        lineHeight: 20,
+        lineHeight: 22,
     },
     example: {
-        color: theme.border,
-        fontSize: 13,
+        ...theme.type.meta,
+        fontFamily: theme.fonts.regular,
+        color: theme.faint,
+    },
+    errorBox: {
+        padding: 16,
+        borderRadius: theme.radius.control,
+        backgroundColor: 'rgba(255, 107, 107, 0.1)',
     },
     error: {
+        ...theme.type.body,
         color: theme.danger,
-        fontSize: 14,
-        lineHeight: 20,
+        lineHeight: 21,
+    },
+    pressed: {
+        opacity: 0.7,
     },
 });
